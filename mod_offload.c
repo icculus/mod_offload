@@ -208,7 +208,7 @@ static int offload_handler(request_rec *r)
             char *mimetype = ((char **) cfg->offload_exclude_mime->elts)[i];
             if (ap_fnmatch(mimetype, r->content_type, FNM_CASE_BLIND) == 0) {
                 debugLog(r, cfg,
-                    "URI '%s' ('%s') is excluded from offloading"
+                    "URI '%s' (%s) is excluded from offloading"
                     " by mimetype pattern '%s'", r->unparsed_uri,
                     r->content_type, mimetype);
                 return DECLINED;
@@ -221,7 +221,7 @@ static int offload_handler(request_rec *r)
     for (i = 0; i < cfg->offload_ips->nelts; i++) {
         if (r->connection->remote_addr.sin_addr.s_addr == list[i].s_addr) {
             offload_host = ((char **) cfg->offload_hosts->elts)[i];
-            debugLog(r, cfg, "Offload server (%s) doing cache refresh on %s",
+            debugLog(r, cfg, "Offload server (%s) doing cache refresh on '%s'",
                         offload_host, r->unparsed_uri);
             return DECLINED;
         } /* if */
