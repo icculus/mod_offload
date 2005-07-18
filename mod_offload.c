@@ -105,6 +105,7 @@ typedef struct
     array_header *offload_hosts;
     array_header *offload_ips;
     array_header *offload_exclude_mime;
+    array_header *offload_exclude_agents;
 } offload_dir_config;
 
 
@@ -134,6 +135,7 @@ static int offload_handler(request_rec *r)
     int nelts = 0;
     int idx = 0;
     char *offload_host = NULL;
+    const char *user_agent = NULL;
 
     cfg = (offload_dir_config *) ap_get_module_config(r->per_dir_config,
                                                       &offload_module);
@@ -227,6 +229,23 @@ static int offload_handler(request_rec *r)
         } /* for */
     } /* if */
 
+    /* is this User-Agent excluded from offloading (like Google)? DECLINED */
+    user_agent = (const char *) ap_table_get(r->headers_in, "User-Agent");
+    if ((user_agent) && (cfg->offload_exclude_agents->nelts))
+    {
+        for (i = 0; i < cfg->offload_exclude_agents->nelts; i++)
+        {
+            char *agent = ((char **) cfg->offload_exclude_agents->elts)[i];
+            if (ap_fnmatch(agent, user_agent, FNM_CASE_BLIND) == 0) {
+                debugLog(r, cfg,
+                    "URI request '%s' from agent '%s' is excluded from"
+                    " offloading by User-Agent pattern '%s'",
+                    r->unparsed_uri, user_agent, agent);
+                return DECLINED;
+            } /* if */
+        } /* for */
+    } /* if */
+
     /* We can offload this. Pick a random offload servers from defined list. */
     debugLog(r, cfg, "Offloading URI '%s'", r->unparsed_uri);
     idx = (int)(time(NULL) % nelts);
@@ -251,6 +270,7 @@ static void *create_offload_dir_config(pool *p, char *dummy)
     retval->offload_debug = 0;
     retval->offload_hosts = ap_make_array(p, 0, sizeof (char *));
     retval->offload_exclude_mime = ap_make_array(p, 0, sizeof (char *));
+    retval->offload_exclude_agents = ap_make_array(p, 0, sizeof (char *));
     retval->offload_ips = ap_make_array(p, 0, sizeof (struct in_addr));
     retval->offload_min_size = DEFAULT_MIN_OFFLOAD_SIZE;
     
@@ -306,7 +326,17 @@ static const char *offload_excludemime(cmd_parms *parms, void *mconfig,
     char **mimepattern = (char **) ap_push_array(cfg->offload_exclude_mime);
     *mimepattern = ap_pstrdup(parms->pool, arg);
     return NULL;  /* no error. */
-} /* offload_host */
+} /* offload_excludemime */
+
+
+static const char *offload_excludeagent(cmd_parms *parms, void *mconfig,
+                                        const char *arg)
+{
+    offload_dir_config *cfg = (offload_dir_config *) mconfig;
+    char **agentpattern = (char **) ap_push_array(cfg->offload_exclude_agents);
+    *agentpattern = ap_pstrdup(parms->pool, arg);
+    return NULL;  /* no error. */
+} /* offload_excludeagent */
 
 
 static void init_offload(server_rec *s, pool *p)
@@ -326,6 +356,8 @@ static command_rec offload_cmds[] = {
     "Minimum size, in bytes, that a file must be to be offloaded" },
 { "OffloadExcludeMimeType", offload_excludemime, NULL, OR_OPTIONS, TAKE1,
     "Mimetype to always exclude from offloading (wildcards allowed)" },
+{ "OffloadExcludeUserAgent", offload_excludeagent, NULL, OR_OPTIONS, TAKE1,
+    "User-Agent to always exclude from offloading (wildcards allowed)" },
 { NULL }
 };
 
