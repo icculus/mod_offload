@@ -60,6 +60,10 @@
  *    This can be a wildcard pattern, so both "text/html" and "text/*" are
  *    valid here.
  *
+ *  OffloadExcludeUserAgent <pattern>
+ *    ...clients with User-Agent fields matching <pattern> are never offloaded.
+ *    This can be a wildcard pattern.
+ *
  * For URLs where mod_offload is in effect, it'll go through a checklist.
  *  Anything in the checklist that fails means that offloading shouldn't
  *  occur and Apache should handle this request as it would without
@@ -72,8 +76,9 @@
  *  - Is this the last Apache content handler (potentially static content)?
  *  - Is the desired file really there?
  *  - Is the desired file more than OffloadMinSize?
- *  - Is the desired file's mimetype not listed in OffloadExcludeMimeType?
  *  - Is the request from someone other than an offload server?
+ *  - Is the desired file's mimetype not listed in OffloadExcludeMimeType?
+ *  - Is the client's User-Agentnot listed in OffloadExcludeUserAgent?
  *
  * If the module makes it all the way through the checklist, it picks a
  *  random offload server (the server is chosen by the current
