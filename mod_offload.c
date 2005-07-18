@@ -200,6 +200,17 @@ static int offload_handler(request_rec *r)
         return DECLINED;
     } /* if */
 
+    /* is this request from one of the listed offload servers? DECLINED */
+    list = (struct in_addr *) cfg->offload_ips->elts;
+    for (i = 0; i < cfg->offload_ips->nelts; i++) {
+        if (r->connection->remote_addr.sin_addr.s_addr == list[i].s_addr) {
+            offload_host = ((char **) cfg->offload_hosts->elts)[i];
+            debugLog(r, cfg, "Offload server (%s) doing cache refresh on '%s'",
+                        offload_host, r->unparsed_uri);
+            return DECLINED;
+        } /* if */
+    } /* for */
+
     /* is the file in the list of mimetypes to never offload? DECLINED */
     if ((r->content_type) && (cfg->offload_exclude_mime->nelts))
     {
@@ -215,17 +226,6 @@ static int offload_handler(request_rec *r)
             } /* if */
         } /* for */
     } /* if */
-
-    /* is this request from one of the listed offload servers? DECLINED */
-    list = (struct in_addr *) cfg->offload_ips->elts;
-    for (i = 0; i < cfg->offload_ips->nelts; i++) {
-        if (r->connection->remote_addr.sin_addr.s_addr == list[i].s_addr) {
-            offload_host = ((char **) cfg->offload_hosts->elts)[i];
-            debugLog(r, cfg, "Offload server (%s) doing cache refresh on '%s'",
-                        offload_host, r->unparsed_uri);
-            return DECLINED;
-        } /* if */
-    } /* for */
 
     /* We can offload this. Pick a random offload servers from defined list. */
     debugLog(r, cfg, "Offloading URI '%s'", r->unparsed_uri);
