@@ -584,10 +584,12 @@ class HTTP
         $port = isset($p['port']) ? $p['port'] : 80;
 
         //debugEcho(array($p['host'], $port, $eno, $estr, $timeout));
-        if (!$fp = @fsockopen($p['host'], $port, $eno, $estr, $timeout)) {
+        $fp = @fsockopen($p['host'], $port, $eno, $estr, $timeout);
+        if ($fp === false) {
             if ($eno == 0) {  // dns lookup failure seems to trigger this. --ryan.
                 sleep(3);
-                if (!$fp = @fsockopen($p['host'], $port, $eno, $estr, $timeout)) {
+                $fp = @fsockopen($p['host'], $port, $eno, $estr, $timeout);
+                if ($fp === false) {
                     return HTTP::raiseError("Connection error: $estr ($eno)");
                 }
             }
