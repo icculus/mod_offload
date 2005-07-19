@@ -174,18 +174,6 @@ function sanestrpos($haystack, $needle)
 } // sanestrpos
 
 
-function bogusSocket($fp)
-{
-    if (!isset($fp))
-        return(true);
-    if ($fp === false)
-        return(true);
-    $md = stream_get_meta_data($fp);
-    if ($md['eof'])
-        return(true);
-    return(false);
-} // bogusSocket
-
 function loadMetadata($fname)
 {
     $retval = array();
@@ -597,11 +585,11 @@ class HTTP
 
         //debugEcho(array($p['host'], $port, $eno, $estr, $timeout));
         $fp = @fsockopen($p['host'], $port, $eno, $estr, $timeout);
-        if (bogusSocket($fp)) {
+        if ($fp === false) {
             if ($eno == 0) {  // dns lookup failure seems to trigger this. --ryan.
                 sleep(3);
                 $fp = @fsockopen($p['host'], $port, $eno, $estr, $timeout);
-                if (bogusSocket($fp)) {
+                if ($fp === false) {
                     return HTTP::raiseError("Connection error: $estr ($eno)");
                 }
             }
@@ -610,9 +598,14 @@ class HTTP
         $path  = !empty($p['path']) ? $p['path'] : '/';
         $path .= !empty($p['query']) ? '?' . $p['query'] : '';
 
-        fputs($fp, "HEAD $path HTTP/1.0\r\n");
-        fputs($fp, 'Host: ' . $p['host'] . ':' . $port . "\r\n");
-        fputs($fp, "Connection: close\r\n\r\n");
+        if (@fputs($fp, "HEAD $path HTTP/1.0\r\n") === false)
+            return HTTP::raiseError("i/o error");
+
+        if (@fputs($fp, 'Host: ' . $p['host'] . ':' . $port . "\r\n") === false)
+            return HTTP::raiseError("i/o error");
+
+        if (@fputs($fp, "Connection: close\r\n\r\n") === false)
+            return HTTP::raiseError("i/o error");
 
         $response = rtrim(fgets($fp, 4096));
         if (preg_match("|^HTTP/[^\s]*\s(.*?)\s|", $response, $status)) {
@@ -620,7 +613,7 @@ class HTTP
         }
         $headers['response'] = $response;
 
-        while ($line = fgets($fp, 4096)) {
+        while ($line = @fgets($fp, 4096)) {
             if (!trim($line)) {
                 break;
             }
