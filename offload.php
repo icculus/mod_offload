@@ -174,6 +174,18 @@ function sanestrpos($haystack, $needle)
 } // sanestrpos
 
 
+function bogusSocket($fp)
+{
+    if (!isset($fp))
+        return(true);
+    if ($fp === false)
+        return(true);
+    $md = stream_get_meta_data($fp);
+    if ($md['eof'])
+        return(true);
+    return(false);
+} // bogusSocket
+
 function loadMetadata($fname)
 {
     $retval = array();
@@ -585,11 +597,11 @@ class HTTP
 
         //debugEcho(array($p['host'], $port, $eno, $estr, $timeout));
         $fp = @fsockopen($p['host'], $port, $eno, $estr, $timeout);
-        if ($fp === false) {
+        if (bogusSocket($fp)) {
             if ($eno == 0) {  // dns lookup failure seems to trigger this. --ryan.
                 sleep(3);
                 $fp = @fsockopen($p['host'], $port, $eno, $estr, $timeout);
-                if ($fp === false) {
+                if (bogusSocket($fp)) {
                     return HTTP::raiseError("Connection error: $estr ($eno)");
                 }
             }
