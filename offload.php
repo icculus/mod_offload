@@ -111,7 +111,11 @@ function getDebugFilePointer()
     if ((!GDEBUG) || (!GDEBUGTOFILE))
         return(NULL);
     if (!isset($GDebugFilePointer))
+    {
         $GDebugFilePointer = fopen(GOFFLOADDIR . '/debug-' . getmypid(), 'a');
+        if ($GDebugFilePointer === false)
+            $GDebugFilePointer = NULL;
+    } // if
     return($GDebugFilePointer);
 } // getDebugFilePointer
 
