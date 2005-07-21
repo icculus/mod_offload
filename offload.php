@@ -263,6 +263,10 @@ function cachedMetadataMostRecent($metadata, $head)
     $fsize = $stat['size'];
     if ($fsize != $metadata['Content-Length'])
     {
+        // whoa, we were supposed to cache this!
+        if ($metadata['X-Offload-Caching-PID'] == getmypid())
+            return(false);
+
         // !!! FIXME: Linux specific!
         if (is_dir('/proc'))
         {
