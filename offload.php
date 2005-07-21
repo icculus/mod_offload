@@ -355,8 +355,12 @@ function debugInit()
     if (GDEBUG)
     {
         header('Content-type: text/plain');
+        debugEcho('');
+        debugEcho('');
+        debugEcho('');
         debugEcho('Offload Debug Run!');
         debugEcho('');
+        debugEcho('Timestamp: ' . date('D M j G:i:s T Y'));
         debugEcho('Base server:' . GBASESERVER);
         debugEcho('You want to get ' . $Guri);
         debugEcho('Referrer string: ' . $_SERVER['HTTP_REFERER']);
