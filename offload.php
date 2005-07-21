@@ -80,6 +80,11 @@ define('GTIMEOUT', 90);
 // This is where we'll cache files.
 define('GOFFLOADDIR', '/usr/local/apache/offload');
 
+// Set GDEBUGTOFILE to write all debug info to files in GOFFLOADDIR, if
+//  GDEBUG is also true. You want this to be false in normal use.
+define('GDEBUGTOFILE', true);
+
+
 // END OF CONFIG VALUES...
 
 
@@ -97,16 +102,38 @@ $GFilePath = NULL;
 $GMetaDataPath = NULL;
 $GSemaphore = NULL;
 $GSemaphoreOwned = 0;
+$GDebugFilePointer = NULL;
+
+
+function getDebugFilePointer()
+{
+    global $GDebugFilePointer;
+    if ((!GDEBUG) || (!GDEBUGTOFILE))
+        return(NULL);
+    if (!isset($GDebugFilePointer))
+        $GDebugFilePointer = fopen(GOFFLOADDIR . '/debug-' . getmypid(), 'a');
+    return($GDebugFilePointer);
+} // getDebugFilePointer
 
 
 function debugEcho($str)
 {
     if (GDEBUG)
     {
-        if (is_array($str))
-            print_r($str);
+        if (!is_array($str))
+            $str = $str . "\n";
+
+        if (!GDEBUGTOFILE)
+            print($str);
         else
-            print($str . "\n");
+        {
+            $fp = getDebugFilePointer();
+            if (isset($fp))
+            {
+                @fputs($fp, print_r($str, true));
+                @fflush($fp);
+            } // if
+        } // else
     } // if
 } // debugEcho
 
@@ -152,9 +179,14 @@ function putSemaphore()
 
 function terminate()
 {
+    global $GDebugFilePointer;
+
     debugEcho('offload script is terminating...');
     while ($GSemaphoreOwned > 0)
         putSemaphore();
+
+    if (isset($GDebugFilePointer))
+        fclose($GDebugFilePointer);
     exit();
 } // terminate
 
