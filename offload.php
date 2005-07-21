@@ -366,8 +366,10 @@ function debugInit()
         debugEcho('');
         debugEcho('Timestamp: ' . date('D M j G:i:s T Y'));
         debugEcho('Base server:' . GBASESERVER);
-        debugEcho('You want to get ' . $Guri);
-        debugEcho('Referrer string: ' . $_SERVER['HTTP_REFERER']);
+        debugEcho('User wants to get: ' . $Guri);
+        debugEcho('Request from address: ' . $_SERVER['REMOTE_ADDR'] . '.');
+        debugEcho('Client User-Agent: "' . $_SERVER['HTTP_USER_AGENT'] . '".');
+        debugEcho('Referrer string: "' . $_SERVER['HTTP_REFERER'] . '".');
         debugEcho('Timeout for HTTP HEAD request is ' . GTIMEOUT . '.');
         debugEcho('Data cache goes in "' . GOFFLOADDIR . '".');
         debugEcho('');
