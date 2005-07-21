@@ -193,7 +193,7 @@ function terminate()
 
 function doHeader($str)
 {
-    if (!GDEBUG)
+    if ((!GDEBUG) || (GDEBUGTOFILE))
         header($str);
     debugEcho("header('$str');");
 } // doHeader
@@ -513,7 +513,7 @@ while (true)
     if (!connection_aborted())
     {
         debugEcho('Would have written ' . strlen($data) . ' bytes.');
-        if (!GDEBUG)
+        if ((!GDEBUG) || (GDEBUGTOFILE))
             print($data);
     } // if
 
