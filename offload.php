@@ -418,6 +418,7 @@ $etagfname = etagToCacheFname($head['ETag']);
 $GFilePath = GOFFLOADDIR . '/filedata-' . $etagfname;
 $GMetaDataPath = GOFFLOADDIR . '/metadata-' . $etagfname;
 $head['X-Offload-Orig-URL'] = $Guri;
+$head['X-Offload-Hostname'] = GBASESERVER;
 
 getSemaphore();
 
