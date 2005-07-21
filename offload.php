@@ -92,7 +92,7 @@ define('GDEBUGTOFILE', true);
 require_once 'PEAR.php';
 
 
-$GVersion = '0.0.5';
+$GVersion = '0.0.6';
 $GServerString = 'offload.php version ' . $GVersion;
 
 $Guri = $_SERVER['REQUEST_URI'];
@@ -458,6 +458,9 @@ else if (!$ishead)
     if ($io === false)
         failure('503 Service Unavailable', "Couldn't stream file to cache.");
 
+    stream_set_blocking($io, false);
+    stream_set_timeout($io, 60);
+
     $cacheio = @fopen($GFilePath, 'wb');
     if ($cacheio === false)
     {
@@ -518,10 +521,31 @@ if ($ishead)
     terminate();
 
 $br = 0;
-
-while (true)
+while ($br < $max)
 {
-    if ($frombaseserver == false)
+    if (feof($io))
+    {
+        debugEcho('feof() triggered.');
+        break;
+    } // if
+
+    if ($frombaseserver)
+    {
+        $info = stream_get_meta_data($io);
+        if ($info['eof'])
+        {
+            debugEcho('socket meta data has eof flag.');
+            break;
+        } // if
+
+        else if ($info['timed_out'])
+        {
+            debugEcho('socket meta data has timed_out flag.');
+            break;
+        } // if
+    } // if
+
+    else
     {
         $stat = @fstat($io);
         if ($stat === false)
@@ -539,26 +563,25 @@ while (true)
     } // if
 
     $data = @fread($io, 8192);
-    if (isset($cacheio))
+
+    $len = strlen($data);
+    $br += $len;
+
+    if ($len > 0)
     {
-        fwrite($cacheio, $data);  // !!! FIXME: check for errors!
-        fflush($cacheio);
+        if (isset($cacheio))
+        {
+            fwrite($cacheio, $data);  // !!! FIXME: check for errors!
+            fflush($cacheio);
+        } // if
+
+        if (!connection_aborted())
+        {
+            debugEcho('Would have written ' . strlen($data) . ' bytes.');
+            if ((!GDEBUG) || (GDEBUGTOFILE))
+                print($data);
+        } // if
     } // if
-
-    $br += strlen($data);
-
-    if (!connection_aborted())
-    {
-        debugEcho('Would have written ' . strlen($data) . ' bytes.');
-        if ((!GDEBUG) || (GDEBUGTOFILE))
-            print($data);
-    } // if
-
-    if ($br >= $max)
-        break;
-
-    if (feof($io))
-        break;
 } // while
 
 debugEcho('Transfer is complete.');
