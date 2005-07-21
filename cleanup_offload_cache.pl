@@ -3,6 +3,9 @@
 use warnings;
 use strict;
 
+# unbuffered output.
+$| = 1;
+
 require LWP;
 require LWP::UserAgent;
 require HTTP::Status;
@@ -57,8 +60,7 @@ opendir(DIRH, $offloaddir) || die("Couldn't open directory [$offloaddir]: $!");
 my @dirfiles = readdir(DIRH);
 closedir(DIRH);
 
-# unbuffered output.
-$| = 1;
+my $diskrecovered = 0;
 
 foreach (@dirfiles) {
     next if not /\A(meta|file)data-/;
@@ -66,9 +68,15 @@ foreach (@dirfiles) {
     my $metadatapath = $offloaddir . '/metadata-' . $etag;
     my $filedatapath = $offloaddir . '/filedata-' . $etag;
 
+    # '7' is the file size info in stat().
+    my $filespace = 0;
+    $filespace += (stat($metadatapath))[7] if (-f $metadatapath);
+    $filespace += (stat($filedatapath))[7] if (-f $filedatapath);
+
     if ((not -f $filedatapath) || (not -f $metadatapath)) {
         unlink $metadatapath;
         unlink $filedatapath;
+        $diskrecovered += $filespace;
         next;
     }
 
@@ -82,6 +90,7 @@ foreach (@dirfiles) {
     $tmp =~ s/\A\"(.*?)\"\Z/$1/;
     if ($tmp ne $etag) {
         print("File '$metadatapath' is bogus.\n");
+        $diskrecovered += $filespace;
         unlink $metadatapath;
         unlink $filedatapath;
         next;
@@ -113,6 +122,7 @@ foreach (@dirfiles) {
 
     if ($dokill) {
         print("  DELETE!\n");
+        $diskrecovered += $filespace;
         unlink $metadatapath;
         unlink $filedatapath;
     } else {
@@ -120,5 +130,6 @@ foreach (@dirfiles) {
     }
 }
 
+print("\n\nRecovered $diskrecovered bytes of disk space.\n");
 exit 0;
 
