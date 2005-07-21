@@ -264,10 +264,13 @@ function cachedMetadataMostRecent($metadata, $head)
     if ($fsize != $metadata['Content-Length'])
     {
         // !!! FIXME: Linux specific!
-        if (is_directory('/proc'))
+        if (is_dir('/proc'))
         {
-            if (!is_directory('/proc/' . $metadata['X-Offload-Caching-PID']))
+            if (!is_dir('/proc/' . $metadata['X-Offload-Caching-PID']))
+            {
+                debugEcho('Caching process ID died!');
                 return(false);
+            } // if
         } // if
     } // if
 
@@ -419,6 +422,9 @@ $GFilePath = GOFFLOADDIR . '/filedata-' . $etagfname;
 $GMetaDataPath = GOFFLOADDIR . '/metadata-' . $etagfname;
 $head['X-Offload-Orig-URL'] = $Guri;
 $head['X-Offload-Hostname'] = GBASESERVER;
+
+debugEcho('metadata cache is ' . $GMetaDataPath);
+debugEcho('file cache is ' . $GFilePath);
 
 getSemaphore();
 
