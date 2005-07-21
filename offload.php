@@ -233,6 +233,8 @@ function loadMetadata($fname)
 
 function cachedMetadataMostRecent($metadata, $head)
 {
+    global $GFilePath;
+
     if (!isset($metadata['Content-Length']))
         return(false);
 
@@ -251,9 +253,23 @@ function cachedMetadataMostRecent($metadata, $head)
     if (strcmp($metadata['Last-Modified'], $head['Last-Modified']) != 0)
         return(false);
 
-    // !!! FIXME: see if file size != Content-Length, and if it isn't,
-    // !!! FIXME:  see if X-Offload-Caching-PID still exists. If process
-    // !!! FIXME:  is missing, assume transfer died and recache.
+    // See if file size != Content-Length, and if it isn't,
+    //  see if X-Offload-Caching-PID still exists. If process
+    //  is missing, assume transfer died and recache.
+    $stat = @stat($GFilePath);
+    if ($stat === false)
+        return(false);
+
+    $fsize = $stat['size'];
+    if ($fsize != $metadata['Content-Length'])
+    {
+        // !!! FIXME: Linux specific!
+        if (is_directory('/proc'))
+        {
+            if (!is_directory('/proc/' . $metadata['X-Offload-Caching-PID']))
+                return(false);
+        } // if
+    } // if
 
     return(true);
 } // cachedMetadataMostRecent
