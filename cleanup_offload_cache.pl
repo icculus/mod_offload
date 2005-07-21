@@ -52,9 +52,19 @@ sub loadMetadata {
     return(%retval);
 }
 
+sub usage {
+    die("USAGE: $0 <offloaddir> [--nukeshortfiles]\n")
+}
 
-my $offloaddir = shift;
-die("USAGE: $0 <offloaddir>\n") if (not defined $offloaddir);
+my $nukeshortfiles = 0;
+my $offloaddir = undef;
+foreach (@ARGV) {
+    $nukeshortfiles = 1, next if ($_ eq '--nukeshortfiles');
+    $offloaddir = $_, next if not defined $offloaddir;
+    usage();
+}
+
+usage() if (not defined $offloaddir);
 
 opendir(DIRH, $offloaddir) || die("Couldn't open directory [$offloaddir]: $!");
 my @dirfiles = readdir(DIRH);
@@ -70,8 +80,10 @@ foreach (@dirfiles) {
 
     # '7' is the file size info in stat().
     my $filespace = 0;
+
+    my $filecachesize = (stat($filedatapath))[7];
     $filespace += (stat($metadatapath))[7] if (-f $metadatapath);
-    $filespace += (stat($filedatapath))[7] if (-f $filedatapath);
+    $filespace += $filecachesize if (-f $filedatapath);
 
     if ((not -f $filedatapath) || (not -f $metadatapath)) {
         unlink $metadatapath;
@@ -96,6 +108,7 @@ foreach (@dirfiles) {
         next;
     }
 
+    my $len = $metadata{'Content-Length'};
     my $hostname = $metadata{'X-Offload-Hostname'};
     my $origurl = $metadata{'X-Offload-Orig-URL'};
     my $url = 'http://' . $hostname . $origurl;
@@ -112,6 +125,9 @@ foreach (@dirfiles) {
     } elsif ($response->is_error()) {
         # everything else we ignore for now.
         print("status unknown (HTTP error $httpcode).");
+    } elsif (($nukeshortfiles) && ($len != $filecachesize)) {
+        $dokill = 1;
+        print("Cached file is wrong size.");
     } else {
         my $hetag = $response->header('ETag');
         $hetag = '' if (not defined $hetag);
