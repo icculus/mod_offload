@@ -73,13 +73,20 @@ closedir(DIRH);
 my $diskrecovered = 0;
 
 foreach (@dirfiles) {
+    # '7' is the file size info in stat().
+    my $filespace = 0;
+
+    my $f = $_;
+    if (/\Adebug-/) {
+        print(" - Deleting debug file '$f'.\n");
+        $diskrecovered += (stat($f))[7];
+        unlink("$offloaddir/$f");
+    }
+
     next if not /\A(meta|file)data-/;
     my ($filetype, $etag) = /\A(meta|file)data-(.*)\Z/;
     my $metadatapath = $offloaddir . '/metadata-' . $etag;
     my $filedatapath = $offloaddir . '/filedata-' . $etag;
-
-    # '7' is the file size info in stat().
-    my $filespace = 0;
 
     my $filecachesize = (stat($filedatapath))[7];
     $filespace += (stat($metadatapath))[7] if (-f $metadatapath);
