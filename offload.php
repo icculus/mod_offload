@@ -398,8 +398,12 @@ $head['X-Offload-Orig-ETag'] = $head['ETag'];
 if (strlen($head['ETag']) > 2)
 {
     // a "weak" ETag?
-    if (strncasecmp(substr($head['ETag'], 2), "W/", 2) == 0)
+    debugEcho("There's a weak ETag on this request.");
+    if (strncasecmp($head['ETag'], "W/", 2) == 0)
+    {
         $head['ETag'] = substr($head['ETag'], 2);
+        debugEcho('Chopped ETag to be [' . $head['ETag'] . ']');
+    } // if
 } // if
 
 // !!! FIXME: Check Cache-Control, Pragma no-cache
