@@ -60,40 +60,17 @@
 //  on the offload server for each base server. This lets each base server
 //  have its own cache and configuration.
 //
-// Then edit everything down to the "END OF CONFIG VALUES..." comment in this
-//  file, and restart the server.
+// Then edit offload_server_config.php to fit your needs.
+//
+// Restart the server so the AliasMatch configuration tweak is picked up.
 //
 // This file is written by Ryan C. Gordon (icculus@icculus.org).
 
-
-
-// GDEBUG should be false at production time, but this lets you sanity check
-//  some things before going live.
-define('GDEBUG', false);
-
-// This is a list of servers that you are offloading.
-define('GBASESERVER', 'icculus.org');
-
-// Time in seconds that i/o to base server should timeout in lieu of activity.
-define('GTIMEOUT', 90);
-
-// This is where we'll cache files.
-define('GOFFLOADDIR', '/usr/local/apache/offload');
-
-// Set GDEBUGTOFILE to write all debug info to files in GOFFLOADDIR, if
-//  GDEBUG is also true. You want this to be false in normal use.
-define('GDEBUGTOFILE', true);
-
-
-// END OF CONFIG VALUES...
-
-
-
+require_once './offload_server_config.php';
 require_once 'PEAR.php';
 
-
-$GVersion = '0.0.6';
-$GServerString = 'offload.php version ' . $GVersion;
+define('GVERSION', '0.0.7');
+$GServerString = 'offload.php version ' . GVERSION;
 
 $Guri = $_SERVER['REQUEST_URI'];
 if (strcmp($Guri{0}, '/') != 0)
