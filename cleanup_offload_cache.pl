@@ -72,6 +72,8 @@ closedir(DIRH);
 
 my $diskrecovered = 0;
 
+@dirfiles = sort(@dirfiles);
+
 foreach (@dirfiles) {
     # '7' is the file size info in stat().
     my $filespace = 0;
