@@ -401,7 +401,7 @@ stopwatch();
 if (PEAR::isError($head))
     failure('503 Service Unavailable', 'Error: ' . $head->getMessage());
 
-debugEcho("The HTTP HEAD from $baseserver ...");
+debugEcho('The HTTP HEAD from ' . GBASESERVER . ' ...');
 debugEcho($head);
 
 if (($head['response_code'] == 401) || (isset($head['WWW-Authenticate'])))
@@ -415,6 +415,14 @@ if ( (!isset($head['ETag'])) ||
      (!isset($head['Last-Modified'])) )
 {
     failure('403 Forbidden', "Offload server doesn't do dynamic content.");
+} // if
+
+$head['X-Offload-Orig-ETag'] = $head['ETag'];
+if (strlen($head['ETag']) > 2)
+{
+    // a "weak" ETag?
+    if (strncasecmp(substr($head['ETag'], 2), "W/", 2) == 0)
+        $head['ETag'] = substr($head['ETag'], 2);
 } // if
 
 // !!! FIXME: Check Cache-Control, Pragma no-cache
