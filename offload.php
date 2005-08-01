@@ -228,7 +228,12 @@ function cachedMetadataMostRecent($metadata, $head)
         return(false);
 
     if (strcmp($metadata['Last-Modified'], $head['Last-Modified']) != 0)
-        return(false);
+    {
+        if (!isset($metadata['X-Offload-Is-Weak']))
+            return(false);
+        if (($metadata['X-Offload-Is-Weak']) == 0)
+            return(false);
+    } // if
 
     // See if file size != Content-Length, and if it isn't,
     //  see if X-Offload-Caching-PID still exists. If process
@@ -395,12 +400,14 @@ if ( (!isset($head['ETag'])) ||
 } // if
 
 $head['X-Offload-Orig-ETag'] = $head['ETag'];
+$head['X-Offload-Is-Weak'] = '0';
 if (strlen($head['ETag']) > 2)
 {
     // a "weak" ETag?
     debugEcho("There's a weak ETag on this request.");
     if (strncasecmp($head['ETag'], "W/", 2) == 0)
     {
+        $head['X-Offload-Is-Weak'] = '1';
         $head['ETag'] = substr($head['ETag'], 2);
         debugEcho('Chopped ETag to be [' . $head['ETag'] . ']');
     } // if
