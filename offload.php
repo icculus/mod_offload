@@ -346,6 +346,31 @@ function stopwatch($id = NULL)
 } // stopwatch
 
 
+// error handler function
+function myErrorHandler($errno, $errstr, $errfile, $errline)
+{
+    switch ($errno)
+    {
+        case E_USER_ERROR:
+            debugEcho("PHP ERROR TRIGGERED: [$errno] $errstr");
+            debugEcho("  Fatal error in line $errline of file $errfile");
+            debugEcho(", PHP " . PHP_VERSION . " (" . PHP_OS . ")");
+            debugEcho("Aborting...");
+            exit(1);
+            break;
+        case E_USER_WARNING:
+            debugEcho("PHP WARNING TRIGGERED: [$errno] $errstr";
+            break;
+        case E_USER_NOTICE:
+            debugEcho("PHP NOTICE TRIGGERED:</b> [$errno] $errstr");
+            break;
+        default:
+            debugEcho("Unknown PHP error triggered!: [$errno] $errstr");
+            break;
+    } // switch
+} // myErrorHandler
+
+
 function debugInit()
 {
     global $Guri;
@@ -368,6 +393,10 @@ function debugInit()
         debugEcho('');
         debugEcho('');
     } // if
+
+    // force PHP errors to not go through debug system and not to user.
+    error_reporting(E_USER_ERROR | E_USER_WARNING | E_USER_NOTICE);
+    set_error_handler('myErrorHandler');
 } // debugInit
 
 
