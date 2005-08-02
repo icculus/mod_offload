@@ -457,6 +457,8 @@ if (isset($HTTP_SERVER_VARS['HTTP_RANGE']))
     debugEcho("There's a HTTP_RANGE specified: [$range].");
     if (strncasecmp($range, 'bytes=', 6) != 0)
         failure('400 Bad Request', 'Only ranges of "bytes" accepted.');
+    else if (strpos($range, ',') !== false)
+        failure('400 Bad Request', 'Multiple ranges not currently supported');
     else
     {
         $range = substr($range, 6);
@@ -474,6 +476,9 @@ if (isset($HTTP_SERVER_VARS['HTTP_RANGE']))
         } // if
     } // else
 } // if
+
+if ($endRange >= $max)  // apparently, this is legal to request.
+    $endRange = $max - 1;
 
 debugEcho("We are feeding the client bytes $startRange to $endRange of $max");
 if (invalidContentRange($startRange, $endRange, $max))
