@@ -390,6 +390,7 @@ function debugInit()
         debugEcho('Referrer string: "' . $_SERVER['HTTP_REFERER'] . '".');
         debugEcho('Timeout for HTTP HEAD request is ' . GTIMEOUT . '.');
         debugEcho('Data cache goes in "' . GOFFLOADDIR . '".');
+        debugEcho('My PID: ' . getmypid());
         debugEcho('');
         debugEcho('');
     } // if
