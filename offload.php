@@ -514,7 +514,7 @@ $responseCode = 'HTTP/1.1 200 OK';
 $reportRange = 0;
 if (isset($HTTP_SERVER_VARS['HTTP_RANGE']))
 {
-    $range = $HTTP_SERVER_VARS['HTTP_RANGE']
+    $range = $HTTP_SERVER_VARS['HTTP_RANGE'];
     if (strncasecmp($range, 'bytes=', 6) == 0)
     {
         $range = substr($range, 6);
