@@ -567,7 +567,7 @@ if ($ishead)
 
 $br = 0;
 $endrange++;
-while ($br <= $endRange)
+while ($br < $endRange)
 {
     $readsize = $startRange - $br;
     if (($readsize <= 0) || ($readsize > 8192))
@@ -630,12 +630,14 @@ while ($br <= $endRange)
 
         if (!connection_aborted())
         {
-            $verbiage = GDEBUGTOFILE ? 'Wrote ' : 'Would have written ';
-            debugEcho($verbiage . strlen($data) . ' bytes.');
             if ((!GDEBUG) || (GDEBUGTOFILE))
             {
                 if (($br >= $startRange) && ($br < $endRange))
+                {
+                    $verb = GDEBUGTOFILE ? 'Wrote ' : 'Would have written ';
+                    debugEcho($verb . $len . ' bytes.');
                     print($data);
+                } // if
             } // if
         } // if
         $br += $len;
