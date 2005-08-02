@@ -605,9 +605,7 @@ while ($br <= $endRange)
     } // if
 
     $data = @fread($io, $readsize);
-
     $len = strlen($data);
-
     if ($len > 0)
     {
         if (isset($cacheio))
@@ -623,16 +621,16 @@ while ($br <= $endRange)
             {
                 if (($br >= $startRange) && ($br < $endRange))
                     print($data);
+            } // if
         } // if
-    } // if
+        $br += $len;
 
-    $br += $len;
-
-    // If this connection is cacheing from base server, we have to keep going.
-    if (($br == $endRange) && (isset($cacheio)) && ($br != $max))
-    {
-        debugEcho('Sent complete request, but am pulling from base server!');
-        $endRange = $max;
+        // If this connection is cacheing from base server, we have to keep going.
+        if (($br == $endRange) && (isset($cacheio)) && ($br != $max))
+        {
+            debugEcho('Sent complete request, but am pulling from base server!');
+            $endRange = $max;
+        } // if
     } // if
 } // while
 
