@@ -462,10 +462,10 @@ if (isset($HTTP_SERVER_VARS['HTTP_RANGE']))
             $responseCode = 'HTTP/1.1 206 Partial Content';
             $reportRange = 1;
         } // if
-        debugEcho("Client wants a range of bytes $startRange to $endRange");
     } // else
 } // if
 
+debugEcho("We are feeding the client bytes $startRange to $endRange of $max");
 if (invalidContentRange($startRange, $endRange, $max))
     failure('400 Bad Request', 'Bad content range requested.');
 
