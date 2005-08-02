@@ -44,9 +44,10 @@
 //
 // Installation:
 // You need PHP with --enable-sysvsem support. You should configure PHP to not
-//  have a time limit on script execution. PHP for Windows currently doesn't
-//  support sysvsem, so until someone writes me a mutex implementation, we
-//  assume you'll use a Unix box for this script.
+//  have a time limit on script execution (max_execution_time setting, or
+//  just don't run this script in safe mode and it'll handle it). PHP for
+//  Windows currently doesn't support sysvsem, so until someone writes me
+//  a mutex implementation, we assume you'll use a Unix box for this script.
 //
 // You need Apache to push every web request to this script, presumably in a
 //  virtual host, if not the entire server.
@@ -80,7 +81,6 @@ $GMetaDataPath = NULL;
 $GSemaphore = NULL;
 $GSemaphoreOwned = 0;
 $GDebugFilePointer = NULL;
-
 
 function getDebugFilePointer()
 {
@@ -375,6 +375,9 @@ function debugInit()
 // The mainline...
 
 debugInit();
+
+// try to prevent script timeout.
+set_time_limit(0);
 
 // Feed a fake robots.txt to keep webcrawlers out of the offload server.
 if (strcmp($uri, "/robots.txt") == 0)
