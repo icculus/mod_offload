@@ -556,7 +556,7 @@ doHeader('Server: ' . $GServerString);
 doHeader('Connection: close');
 doHeader('ETag: ' . $metadata['ETag']);
 doHeader('Last-Modified: ' . $metadata['Last-Modified']);
-doHeader('Content-Length: ' . $max);
+doHeader('Content-Length: ' . (($endRange - $startRange) + 1));
 doHeader('Accept-Ranges: bytes');
 doHeader('Content-Type: ' . $metadata['Content-Type']);
 if ($reportRange)
