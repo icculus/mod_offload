@@ -630,7 +630,8 @@ while ($br <= $endRange)
 
         if (!connection_aborted())
         {
-            debugEcho('Would have written ' . strlen($data) . ' bytes.');
+            $verbiage = GDEBUGTOFILE ? 'Wrote ' : 'Would have written ';
+            debugEcho($verbiage . strlen($data) . ' bytes.');
             if ((!GDEBUG) || (GDEBUGTOFILE))
             {
                 if (($br >= $startRange) && ($br < $endRange))
