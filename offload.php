@@ -167,7 +167,7 @@ function terminate()
         putSemaphore();
 
     if (isset($GDebugFilePointer))
-        fclose($GDebugFilePointer);
+        @fclose($GDebugFilePointer);
     exit();
 } // terminate
 
@@ -303,6 +303,17 @@ function failure($httperr, $errmsg, $location = NULL)
     print("$errmsg\n");
     terminate();
 } // failure
+
+function invalidContentRange($startRange, $endRange, $max)
+{
+    if (($startRange < 0) || ($startRange >= $max))
+        return(false);
+    if (($endRange < 0) || ($endRange >= $max))
+        return(false);
+    if ($startRange > $endRange)
+        return(false);
+    return(true);
+} // invalidContentRange
 
 
 function microtime_float()
@@ -494,31 +505,66 @@ else if (!$ishead)
 
 putSemaphore();
 
-// !!! FIXME: partial content:
-// client...
-//  Range: bytes=347776-
-// server...
-//  HTTP/1.1 206 Partial Content
-//  Accept-Ranges: bytes
-//  Content-Length: 239225299
-//  Content-Range: bytes 347776-239573074/239573075
-
+// Partial content:
+// Does client want a range (download resume, "web accelerators", etc)?
 $max = $metadata['Content-Length'];
-doHeader('HTTP/1.1 200 OK');
+$startRange = 0;
+$endRange = $max-1;
+$responseCode = 'HTTP/1.1 200 OK';
+$reportRange = 0;
+if (isset($HTTP_SERVER_VARS['HTTP_RANGE']))
+{
+    $range = $HTTP_SERVER_VARS['HTTP_RANGE']
+    if (strncasecmp($range, 'bytes=', 6) == 0)
+    {
+        $range = substr($range, 6);
+        $pos = strpos($range, '-');
+        if ($pos !== false)
+        {
+            $startRange = trim(substr($range, 0, $pos));
+            $endRange = trim(substr($range, $pos + 1));
+            if (strcmp($startRange, '') == 0)
+                $startRange = 0;
+            if (strcmp($endRange, '') == 0)
+                $endRange = $max-1;
+            $responseCode = 'HTTP/1.1 206 Partial Content';
+            $reportRange = 1;
+        } // if
+    } // if
+} // if
+
+if (invalidContentRange($startRange, $endRange, $max))
+    failure('400 Bad Request', 'Bad content range requested.');
+
+doHeader($responseCode);
 doHeader('Date: ' . HTTP::date());
 doHeader('Server: ' . $GServerString);
 doHeader('Connection: close');
 doHeader('ETag: ' . $metadata['ETag']);
 doHeader('Last-Modified: ' . $metadata['Last-Modified']);
 doHeader('Content-Length: ' . $max);
+doHeader('Accept-Ranges: bytes');
 doHeader('Content-Type: ' . $metadata['Content-Type']);
+if ($reportRange)
+    doHeader("Content-Range: bytes $startRange-$endRange/$max");
 
 if ($ishead)
     terminate();
 
 $br = 0;
-while ($br < $max)
+$endrange++;
+while ($br <= $endRange)
 {
+    $readsize = $startRange - $br;
+    if (($readsize <= 0) || ($readsize > 8192))
+        $readsize = 8192;
+
+    if ($readsize > ($endRange - $br))
+        $readsize = ($endRange - $br);
+
+    if ($readsize == 0)
+        break;  // Shouldn't hit, but just in case...
+
     if (feof($io))
     {
         debugEcho('feof() triggered.');
@@ -550,7 +596,7 @@ while ($br < $max)
         $cursize = $stat['size'];
         if ($cursize < $max)
         {
-            if (($cursize - $br) <= 8192)  // may be caching on another process.
+            if (($cursize - $br) <= $readsize)  // may be caching on another process.
             {
                 sleep(1);
                 continue;
@@ -558,10 +604,9 @@ while ($br < $max)
         } // if
     } // if
 
-    $data = @fread($io, 8192);
+    $data = @fread($io, $readsize);
 
     $len = strlen($data);
-    $br += $len;
 
     if ($len > 0)
     {
@@ -575,16 +620,33 @@ while ($br < $max)
         {
             debugEcho('Would have written ' . strlen($data) . ' bytes.');
             if ((!GDEBUG) || (GDEBUGTOFILE))
-                print($data);
+            {
+                if (($br >= $startRange) && ($br < $endRange))
+                    print($data);
         } // if
+    } // if
+
+    $br += $len;
+
+    // If this connection is cacheing from base server, we have to keep going.
+    if (($br == $endRange) && (isset($cacheio)) && ($br != $max))
+    {
+        debugEcho('Sent complete request, but am pulling from base server!');
+        $endRange = $max;
     } // if
 } // while
 
 debugEcho('Transfer is complete.');
 
-if ($br != $max)
+if (isset($cacheio))
 {
-    debugEcho("Bogus transfer! Sent $br, wanted to send $max!");
+    @fclose($cacheio);
+    $cacheio = NULL;
+} // if
+
+if ($br != $endRange)
+{
+    debugEcho("Bogus transfer! Sent $br, wanted to send $endRange!");
     nukeRequestFromCache();
 } // if
 
