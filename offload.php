@@ -160,7 +160,7 @@ function putSemaphore()
 
 function terminate()
 {
-    global $GDebugFilePointer;
+    global $GDebugFilePointer, $GSemaphoreOwned;
 
     debugEcho('offload script is terminating...');
     while ($GSemaphoreOwned > 0)
@@ -409,7 +409,7 @@ debugInit();
 set_time_limit(0);
 
 // Feed a fake robots.txt to keep webcrawlers out of the offload server.
-if (strcmp($uri, "/robots.txt") == 0)
+if (strcmp($Guri, "/robots.txt") == 0)
     failure('200 OK', "User-agent: *\nDisallow: /");
 
 if (sanestrpos($Guri, '?') >= 0)
@@ -465,6 +465,8 @@ $io = NULL;  // read from this. May be file or HTTP connection.
 // HTTP HEAD requests for PHP scripts otherwise run fully and throw away the
 //  results: http://www.figby.com/archives/2004/06/01/2004-06-01-php/
 $ishead = (strcasecmp($_SERVER['REQUEST_METHOD'], 'HEAD') == 0);
+if ($ishead)
+    debugEcho('This is a HEAD request to the offload server.');
 
 // Partial content:
 // Does client want a range (download resume, "web accelerators", etc)?
