@@ -566,7 +566,7 @@ if ($ishead)
     terminate();
 
 $br = 0;
-$endrange++;
+$endRange++;
 while ($br < $endRange)
 {
     $readsize = $startRange - $br;
