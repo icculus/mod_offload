@@ -441,6 +441,16 @@ $startRange = 0;
 $endRange = $max-1;
 $responseCode = 'HTTP/1.1 200 OK';
 $reportRange = 0;
+
+if (isset($HTTP_SERVER_VARS['HTTP_IF_RANGE']))
+{
+    // !!! FIXME: handle this.
+    $ifrange = $HTTP_SERVER_VARS['HTTP_IF_RANGE'];
+    debugEcho("Client set If-Range: [$ifrange]...unsupported!");
+    if (isset($HTTP_SERVER_VARS['HTTP_RANGE']))
+        unset($HTTP_SERVER_VARS['HTTP_RANGE']);
+} // if
+
 if (isset($HTTP_SERVER_VARS['HTTP_RANGE']))
 {
     $range = $HTTP_SERVER_VARS['HTTP_RANGE'];
