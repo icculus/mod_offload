@@ -434,6 +434,41 @@ $io = NULL;  // read from this. May be file or HTTP connection.
 //  results: http://www.figby.com/archives/2004/06/01/2004-06-01-php/
 $ishead = (strcasecmp($_SERVER['REQUEST_METHOD'], 'HEAD') == 0);
 
+// Partial content:
+// Does client want a range (download resume, "web accelerators", etc)?
+$max = $head['Content-Length'];
+$startRange = 0;
+$endRange = $max-1;
+$responseCode = 'HTTP/1.1 200 OK';
+$reportRange = 0;
+if (isset($HTTP_SERVER_VARS['HTTP_RANGE']))
+{
+    $range = $HTTP_SERVER_VARS['HTTP_RANGE'];
+    debugEcho("There's a HTTP_RANGE specified: [$range].");
+    if (strncasecmp($range, 'bytes=', 6) != 0)
+        failure('400 Bad Request', 'Only ranges of "bytes" accepted.');
+    else
+    {
+        $range = substr($range, 6);
+        $pos = strpos($range, '-');
+        if ($pos !== false)
+        {
+            $startRange = trim(substr($range, 0, $pos));
+            $endRange = trim(substr($range, $pos + 1));
+            if (strcmp($startRange, '') == 0)
+                $startRange = 0;
+            if (strcmp($endRange, '') == 0)
+                $endRange = $max-1;
+            $responseCode = 'HTTP/1.1 206 Partial Content';
+            $reportRange = 1;
+        } // if
+        debugEcho("Client wants a range of bytes $startRange to $endRange");
+    } // else
+} // if
+
+if (invalidContentRange($startRange, $endRange, $max))
+    failure('400 Bad Request', 'Bad content range requested.');
+
 $etagfname = etagToCacheFname($head['ETag']);
 $GFilePath = GOFFLOADDIR . '/filedata-' . $etagfname;
 $GMetaDataPath = GOFFLOADDIR . '/metadata-' . $etagfname;
@@ -504,41 +539,6 @@ else if (!$ishead)
 } // else
 
 putSemaphore();
-
-// Partial content:
-// Does client want a range (download resume, "web accelerators", etc)?
-$max = $metadata['Content-Length'];
-$startRange = 0;
-$endRange = $max-1;
-$responseCode = 'HTTP/1.1 200 OK';
-$reportRange = 0;
-if (isset($HTTP_SERVER_VARS['HTTP_RANGE']))
-{
-    $range = $HTTP_SERVER_VARS['HTTP_RANGE'];
-    debugEcho("There's a HTTP_RANGE specified: [$range].");
-    if (strncasecmp($range, 'bytes=', 6) != 0)
-        failure('400 Bad Request', 'Only ranges of "bytes" accepted.');
-    else
-    {
-        $range = substr($range, 6);
-        $pos = strpos($range, '-');
-        if ($pos !== false)
-        {
-            $startRange = trim(substr($range, 0, $pos));
-            $endRange = trim(substr($range, $pos + 1));
-            if (strcmp($startRange, '') == 0)
-                $startRange = 0;
-            if (strcmp($endRange, '') == 0)
-                $endRange = $max-1;
-            $responseCode = 'HTTP/1.1 206 Partial Content';
-            $reportRange = 1;
-        } // if
-        debugEcho("Client wants a range of bytes $startRange to $endRange");
-    } // else
-} // if
-
-if (invalidContentRange($startRange, $endRange, $max))
-    failure('400 Bad Request', 'Bad content range requested.');
 
 doHeader($responseCode);
 doHeader('Date: ' . HTTP::date());
