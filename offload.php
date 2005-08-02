@@ -415,9 +415,9 @@ $head['X-Offload-Is-Weak'] = '0';
 if (strlen($head['ETag']) > 2)
 {
     // a "weak" ETag?
-    debugEcho("There's a weak ETag on this request.");
     if (strncasecmp($head['ETag'], "W/", 2) == 0)
     {
+        debugEcho("There's a weak ETag on this request.");
         $head['X-Offload-Is-Weak'] = '1';
         $head['ETag'] = substr($head['ETag'], 2);
         debugEcho('Chopped ETag to be [' . $head['ETag'] . ']');
