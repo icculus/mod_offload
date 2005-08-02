@@ -359,7 +359,7 @@ function myErrorHandler($errno, $errstr, $errfile, $errline)
             exit(1);
             break;
         case E_USER_WARNING:
-            debugEcho("PHP WARNING TRIGGERED: [$errno] $errstr";
+            debugEcho("PHP WARNING TRIGGERED: [$errno] $errstr");
             break;
         case E_USER_NOTICE:
             debugEcho("PHP NOTICE TRIGGERED:</b> [$errno] $errstr");
