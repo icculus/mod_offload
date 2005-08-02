@@ -527,67 +527,72 @@ $head['X-Offload-Hostname'] = GBASESERVER;
 debugEcho('metadata cache is ' . $GMetaDataPath);
 debugEcho('file cache is ' . $GFilePath);
 
-getSemaphore();
-
-$metadata = loadMetadata($GMetaDataPath);
-if (cachedMetadataMostRecent($metadata, $head))
-{
-    $io = @fopen($GFilePath, 'rb');
-    if ($io === false)
-        failure('500 Internal Server Error', "Couldn't access cached data.");
-    debugEcho('File is cached.');
-} // if
-
-else if (!$ishead)
-{
-    // we need to pull a new copy from the base server...
-
-    ignore_user_abort(true);  // if we're caching, we MUST run to completion!
-
-    $frombaseserver = true;
-    $io = @fopen($origurl, 'rb');  // !!! FIXME: may block, don't hold semaphore here!
-    if ($io === false)
-        failure('503 Service Unavailable', "Couldn't stream file to cache.");
-
-    stream_set_blocking($io, false);
-    stream_set_timeout($io, 60);
-
-    $cacheio = @fopen($GFilePath, 'wb');
-    if ($cacheio === false)
-    {
-        fclose($io);
-        failure('500 Internal Server Error', "Couldn't update cached data.");
-    } // if
-
-    $metaout = @fopen($GMetaDataPath, 'wb');
-    if ($metaout === false)
-    {
-        fclose($cacheio);
-        fclose($io);
-        nukeRequestFromCache();
-        failure('500 Internal Server Error', "Couldn't update metadata.");
-    } // if
-
-    // !!! FIXME: This is a race condition...may change between HEAD
-    // !!! FIXME:  request and actual HTTP grab. We should really
-    // !!! FIXME:  just use this for comparison once, and if we are
-    // !!! FIXME:  recaching, throw this out and use the headers from the
-    // !!! FIXME:  actual HTTP grab when really updating the metadata.
-    //
-    // !!! FIXME: Also, write to temp file and rename in case of write failure!
-    if (!isset($head['Content-Type']))  // make sure this is sane.
-        $head['Content-Type'] = 'application/octet-stream';
-
-    $head['X-Offload-Caching-PID'] = getmypid();
-
-    foreach ($head as $key => $val)
-        fputs($metaout, $key . "\n" . $val . "\n");
-    fclose($metaout);
+if ($ishead)
     $metadata = $head;
-    debugEcho('Cache needs refresh...pulling from base server...');
-} // else
+else
+{
+    getSemaphore();
 
-putSemaphore();
+    $metadata = loadMetadata($GMetaDataPath);
+    if (cachedMetadataMostRecent($metadata, $head))
+    {
+        $io = @fopen($GFilePath, 'rb');
+        if ($io === false)
+            failure('500 Internal Server Error', "Couldn't access cached data.");
+        debugEcho('File is cached.');
+    } // else if
+
+    else
+    {
+        // we need to pull a new copy from the base server...
+
+        ignore_user_abort(true);  // if we're caching, we MUST run to completion!
+
+        $frombaseserver = true;
+        $io = @fopen($origurl, 'rb');  // !!! FIXME: may block, don't hold semaphore here!
+        if ($io === false)
+            failure('503 Service Unavailable', "Couldn't stream file to cache.");
+
+        stream_set_blocking($io, false);
+        stream_set_timeout($io, 60);
+
+        $cacheio = @fopen($GFilePath, 'wb');
+        if ($cacheio === false)
+        {
+            fclose($io);
+            failure('500 Internal Server Error', "Couldn't update cached data.");
+        } // if
+
+        $metaout = @fopen($GMetaDataPath, 'wb');
+        if ($metaout === false)
+        {
+            fclose($cacheio);
+            fclose($io);
+            nukeRequestFromCache();
+            failure('500 Internal Server Error', "Couldn't update metadata.");
+        } // if
+
+        // !!! FIXME: This is a race condition...may change between HEAD
+        // !!! FIXME:  request and actual HTTP grab. We should really
+        // !!! FIXME:  just use this for comparison once, and if we are
+        // !!! FIXME:  recaching, throw this out and use the headers from the
+        // !!! FIXME:  actual HTTP grab when really updating the metadata.
+        //
+        // !!! FIXME: Also, write to temp file and rename in case of write failure!
+        if (!isset($head['Content-Type']))  // make sure this is sane.
+            $head['Content-Type'] = 'application/octet-stream';
+
+        $head['X-Offload-Caching-PID'] = getmypid();
+
+        foreach ($head as $key => $val)
+            fputs($metaout, $key . "\n" . $val . "\n");
+        fclose($metaout);
+        $metadata = $head;
+        debugEcho('Cache needs refresh...pulling from base server...');
+    } // else
+
+    putSemaphore();
+} // else
 
 doHeader($responseCode);
 doHeader('Date: ' . HTTP::date());
@@ -602,7 +607,10 @@ if ($reportRange)
     doHeader("Content-Range: bytes $startRange-$endRange/$max");
 
 if ($ishead)
+{
+    debugEcho('This was a HEAD request to offload server, so it is done.');
     terminate();
+} // if
 
 $br = 0;
 $endRange++;
