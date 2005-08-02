@@ -515,7 +515,10 @@ $reportRange = 0;
 if (isset($HTTP_SERVER_VARS['HTTP_RANGE']))
 {
     $range = $HTTP_SERVER_VARS['HTTP_RANGE'];
-    if (strncasecmp($range, 'bytes=', 6) == 0)
+    debugEcho("There's a HTTP_RANGE specified: [$range].");
+    if (strncasecmp($range, 'bytes=', 6) != 0)
+        failure('400 Bad Request', 'Only ranges of "bytes" accepted.');
+    else
     {
         $range = substr($range, 6);
         $pos = strpos($range, '-');
@@ -530,7 +533,8 @@ if (isset($HTTP_SERVER_VARS['HTTP_RANGE']))
             $responseCode = 'HTTP/1.1 206 Partial Content';
             $reportRange = 1;
         } // if
-    } // if
+        debugEcho("Client wants a range of bytes $startRange to $endRange");
+    } // else
 } // if
 
 if (invalidContentRange($startRange, $endRange, $max))
