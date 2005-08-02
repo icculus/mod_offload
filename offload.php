@@ -307,12 +307,12 @@ function failure($httperr, $errmsg, $location = NULL)
 function invalidContentRange($startRange, $endRange, $max)
 {
     if (($startRange < 0) || ($startRange >= $max))
-        return(false);
+        return(true);
     if (($endRange < 0) || ($endRange >= $max))
-        return(false);
+        return(true);
     if ($startRange > $endRange)
-        return(false);
-    return(true);
+        return(true);
+    return(false);
 } // invalidContentRange
 
 
