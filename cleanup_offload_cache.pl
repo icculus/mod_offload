@@ -81,7 +81,10 @@ foreach (@dirfiles) {
     my $f = $_;
     if (/\Adebug-/) {
         print(" - Deleting debug file '$f'.\n");
-        $diskrecovered += (stat($f))[7];
+        my @statbuf = (stat($f));
+        my $size = 0;
+        $size = $statbuf[7] if @statbuf;
+        $diskrecovered += $size;
         unlink("$offloaddir/$f");
     }
 
