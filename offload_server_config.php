@@ -20,5 +20,12 @@ define('GOFFLOADDIR', '/usr/local/apache/offload');
 //  GDEBUG is also true. You want this to be false in normal use.
 define('GDEBUGTOFILE', true);
 
+// Set GUSESEMAPHORE to true to use sem_acquire() for locking.
+// Set GUSESEMAPHORE to false to use mkdir() for locking.
+//  sem_acquire is flakey, mkdir will NOT work on NFS!
+//  All bets are off on Windows either way.  :)
+define('GUSESEMAPHORE', false);
+
+
 // END OF CONFIG VALUES...
 ?>

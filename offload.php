@@ -81,6 +81,8 @@ $GMetaDataPath = NULL;
 $GSemaphore = NULL;
 $GSemaphoreOwned = 0;
 $GDebugFilePointer = NULL;
+$GLockDir = GOFFLOADDIR . '/lock-';
+$GEtagFname = NULL;
 
 function getDebugFilePointer()
 {
@@ -127,33 +129,66 @@ function etagToCacheFname($etag)
 
 function getSemaphore()
 {
-    global $GSemaphore, $GSemaphoreOwned;
+    global $GSemaphore, $GSemaphoreOwned, $GLockDir, $GEtagFname;
 
     debugEcho("grabbing semaphore...(owned $GSemaphoreOwned time(s).)");
     if ($GSemaphoreOwned++ > 0)
         return;
 
-    if (!isset($GSemaphore))
+    if (GUSESEMAPHORE)
     {
-        debugEcho('(have to create semaphore...)');
-        $GSemaphore = sem_get(0x8267bc62);  // !!! FIXME: good value?
-        if ($GSemaphore === false)
-            failure('503 Service Unavailable', "Couldn't allocate semaphore.");
+        if (!isset($GSemaphore))
+        {
+            debugEcho('(have to create semaphore...)');
+            $GSemaphore = sem_get(0x8267bc62);  // !!! FIXME: good value?
+            if ($GSemaphore === false)
+                failure('503 Service Unavailable', "Couldn't allocate semaphore.");
+        } // if
+        sem_acquire($GSemaphore);
     } // if
-    
-    sem_acquire($GSemaphore);
+    else
+    {
+        if ($GEtagFname == NULL)
+            failure('503 Service Unavailable', 'Semaphore init failed');
+
+        $dir = $GLockDir . $GEtagFname;
+        $max = 100;
+        $count = 0;
+        while (($count < $max) && (@mkdir($dir) === false))
+        {
+            usleep(10000);
+            $count++;
+        } // while
+
+        if ($count == $max)  // didn't get lock...force it. So nasty.
+        {
+            @rmdir($dir);
+            $GSemaphoreOwned--;
+            getSemaphore();
+        } // if
+    } // else
 } // getSemaphore
 
 
 function putSemaphore()
 {
-    global $GSemaphore, $GSemaphoreOwned;
-    if ( ($GSemaphoreOwned == 0) || (!isset($GSemaphore)) )
+    global $GSemaphore, $GSemaphoreOwned, $GLockDir, $GEtagFname;
+    if ($GSemaphoreOwned == 0)
         return;
 
     if (--$GSemaphoreOwned == 0)
-        sem_release($GSemaphore);
-
+    {
+        if (GUSESEMAPHORE)
+        {
+            if (isset($GSemaphore))
+                sem_release($GSemaphore);
+        } // if
+        else
+        {
+            if ($GEtagFname != NULL)
+                @rmdir($GLockDir . $GEtagFname);
+        } // else
+    } // if
     debugEcho("released semaphore...(now owned $GSemaphoreOwned time(s).)");
 } // putSemaphore
 
@@ -519,9 +554,9 @@ debugEcho("We are feeding the client bytes $startRange to $endRange of $max");
 if (invalidContentRange($startRange, $endRange, $max))
     failure('400 Bad Request', 'Bad content range requested.');
 
-$etagfname = etagToCacheFname($head['ETag']);
-$GFilePath = GOFFLOADDIR . '/filedata-' . $etagfname;
-$GMetaDataPath = GOFFLOADDIR . '/metadata-' . $etagfname;
+$GEtagFname = etagToCacheFname($head['ETag']);
+$GFilePath = GOFFLOADDIR . '/filedata-' . $GEtagFname;
+$GMetaDataPath = GOFFLOADDIR . '/metadata-' . $GEtagFname;
 $head['X-Offload-Orig-URL'] = $Guri;
 $head['X-Offload-Hostname'] = GBASESERVER;
 
