@@ -105,9 +105,9 @@
 
 /* some Apache 1.3/2.0 compatibility glue... */
 #ifndef STANDARD20_MODULE_STUFF
+   module MODULE_VAR_EXPORT offload_module;
 #  define TARGET_APACHE_1_3 1
 #  include "fnmatch.h"
-#  define AP_MODULE_DECLARE_DATA MODULE_VAR_EXPORT
 #  define wild_match(p,s) (ap_fnmatch(p, s, FNM_CASE_BLIND) == 0)
 #  define REQ_AUTH_TYPE(r) (r)->connection->ap_auth_type
 #  define FINFO_MODE(r) (r)->finfo.st_mode
@@ -127,6 +127,7 @@
    typedef pool apr_pool_t;
    typedef table apr_table_t;
 #else
+   module AP_MODULE_DECLARE_DATA offload_module;
 #  include "apr_strings.h"
 #  include "apr_lib.h"
 #  include "apr_fnmatch.h"
@@ -136,9 +137,6 @@
 #  define FINFO_SIZE(r) (r)->finfo.size
 #endif
 
-
-
-module AP_MODULE_DECLARE_DATA offload_module;
 
 typedef struct
 {
@@ -440,7 +438,7 @@ static handler_rec offload_handlers[] =
     { NULL , NULL }
 };
 
-module AP_MODULE_DECLARE_DATA offload_module =
+module MODULE_VAR_EXPORT offload_module =
 {
     STANDARD_MODULE_STUFF,
     init_offload,               /* module initializer                 */
