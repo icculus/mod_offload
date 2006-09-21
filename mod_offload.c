@@ -57,7 +57,7 @@
  *
  *  OffloadExcludeMimeType <pattern>
  *    ...files with mimetypes matching <pattern> are never offloaded.
- *    This can be a wildcard pattern, so both "text/html" and "text/*" are
+ *    This can be a wildcard pattern, so both "text/html" and "text/h*" are
  *    valid here.
  *
  *  OffloadExcludeUserAgent <pattern>
@@ -78,7 +78,7 @@
  *  - Is the desired file more than OffloadMinSize?
  *  - Is the request from someone other than an offload server?
  *  - Is the desired file's mimetype not listed in OffloadExcludeMimeType?
- *  - Is the client's User-Agentnot listed in OffloadExcludeUserAgent?
+ *  - Is the client's User-Agent not listed in OffloadExcludeUserAgent?
  *
  * If the module makes it all the way through the checklist, it picks a
  *  random offload server (the server is chosen by the current
@@ -90,31 +90,69 @@
  *  This file written by Ryan C. Gordon (icculus@icculus.org).
  */
 
+#include "ap_config.h"
 #include "httpd.h"
+#include "http_request.h"
 #include "http_config.h"
 #include "http_core.h"
 #include "http_log.h"
+#include "http_main.h"
 #include "http_protocol.h"
-#include "fnmatch.h"
 
-#define MOD_OFFLOAD_VERSION "0.0.4"
+#define MOD_OFFLOAD_VER "0.0.5"
 #define DEFAULT_MIN_OFFLOAD_SIZE (5 * 1024)
+#define VERSION_COMPONENT "mod_offload/"MOD_OFFLOAD_VER
 
-module MODULE_VAR_EXPORT offload_module;
+/* some Apache 1.3/2.0 compatibility glue... */
+#ifndef STANDARD20_MODULE_STUFF
+#  define TARGET_APACHE_1_3 1
+#  include "fnmatch.h"
+#  define AP_MODULE_DECLARE_DATA MODULE_VAR_EXPORT
+#  define wild_match(p,s) (ap_fnmatch(p, s, FNM_CASE_BLIND) == 0)
+#  define REQ_AUTH_TYPE(r) (r)->connection->ap_auth_type
+#  define FINFO_MODE(r) (r)->finfo.st_mode
+#  define FINFO_SIZE(r) (r)->finfo.st_size
+#  define apr_vsnprintf(a,b,c,d) ap_vsnprintf(a,b,c,d)
+#  define apr_table_get(a,b) ap_table_get(a,b)
+#  define apr_table_setn(a,b,c) ap_table_setn(a,b,c)
+#  define apr_pstrcat(a,b,c,d,e) ap_pstrcat(a,b,c,d,e)
+#  define apr_pstrdup(a,b) ap_pstrdup(a,b)
+#  define apr_palloc(a,b) ap_palloc(a,b)
+#  define apr_array_make(a,b,c) ap_make_array(a,b,c)
+#  define apr_array_push(a) ap_push_array(a)
+#  define AP_INIT_FLAG(a,b,c,d,e) { a,b,c,d,FLAG,e }
+#  define AP_INIT_TAKE1(a,b,c,d,e) { a,b,c,d,TAKE1,e }
+   typedef struct in_addr apr_sockaddr_t;
+   typedef array_header apr_array_header_t;
+   typedef pool apr_pool_t;
+   typedef table apr_table_t;
+#else
+#  include "apr_strings.h"
+#  include "apr_lib.h"
+#  include "apr_fnmatch.h"
+#  define wild_match(p,s) (apr_fnmatch(p,s,APR_FNM_CASE_BLIND) == APR_SUCCESS)
+#  define REQ_AUTH_TYPE(r) (r)->ap_auth_type
+#  define FINFO_MODE(r) (r)->finfo.protection
+#  define FINFO_SIZE(r) (r)->finfo.size
+#endif
+
+
+
+module AP_MODULE_DECLARE_DATA offload_module;
 
 typedef struct
 {
     int offload_engine_on;
     int offload_debug;
     int offload_min_size;
-    array_header *offload_hosts;
-    array_header *offload_ips;
-    array_header *offload_exclude_mime;
-    array_header *offload_exclude_agents;
+    apr_array_header_t *offload_hosts;
+    apr_array_header_t *offload_ips;
+    apr_array_header_t *offload_exclude_mime;
+    apr_array_header_t *offload_exclude_agents;
 } offload_dir_config;
 
 
-static void debugLog(request_rec *r, const offload_dir_config *cfg,
+static void debugLog(const request_rec *r, const offload_dir_config *cfg,
                      const char *fmt, ...)
 {
     if (cfg->offload_debug)
@@ -122,11 +160,14 @@ static void debugLog(request_rec *r, const offload_dir_config *cfg,
         char buf[512];
         va_list ap;
         va_start(ap, fmt);
-        ap_vsnprintf(buf, sizeof (buf), fmt, ap);
+        apr_vsnprintf(buf, sizeof (buf), fmt, ap);
         va_end(ap);
-        ap_log_error(APLOG_MARK,
-                     APLOG_NOERRNO|APLOG_ERR,
-                     r->server, "mod_offload: %s", buf);
+        ap_log_rerror(APLOG_MARK,
+                      APLOG_NOERRNO|APLOG_ERR,
+                      #if !TARGET_APACHE_1_3
+                      APR_SUCCESS,
+                      #endif
+                      r, "mod_offload: %s", buf);
     } /* if */
 } /* debugLog */
 
@@ -134,7 +175,7 @@ static void debugLog(request_rec *r, const offload_dir_config *cfg,
 static int offload_handler(request_rec *r)
 {
     int i = 0;
-    struct in_addr *list = NULL;
+    apr_sockaddr_t *list = NULL;
     offload_dir_config *cfg = NULL;
     char *uri = NULL;
     int nelts = 0;
@@ -183,34 +224,44 @@ static int offload_handler(request_rec *r)
     } /* if */
 
     /* is there a password? DECLINED */
-    if (r->connection->ap_auth_type != NULL) {
+    if (REQ_AUTH_TYPE(r) != NULL) {
         debugLog(r, cfg, "URI '%s' requires auth", r->unparsed_uri);
         return DECLINED;
     } /* if */
 
+    #if TARGET_APACHE_1_3   /* we just insert as the last hook in 2.0 API. */
     /* is there any dynamic content handler? DECLINED */
     if (r->handler != NULL) {
-        debugLog(r, cfg, "URI '%s' has handler", r->unparsed_uri);
+        debugLog(r, cfg, "URI '%s' has handler '%s'.",
+                 r->unparsed_uri, r->handler);
         return DECLINED;
     } /* if */
+    #endif
 
     /* is file missing? DECLINED */
-    if ((r->finfo.st_mode == 0) || (r->path_info && *r->path_info)) {
+    if ((FINFO_MODE(r) == 0) || (r->path_info && *r->path_info)) {
         debugLog(r, cfg, "File '%s' missing", r->unparsed_uri);
         return DECLINED;
     } /* if */
 
     /* is file less than so-and-so? DECLINED */
-    if (r->finfo.st_size < cfg->offload_min_size) {
+    if (FINFO_SIZE(r) < cfg->offload_min_size) {
         debugLog(r, cfg, "File '%s' too small (%d is less than %d)",
-                  r->unparsed_uri, r->finfo.st_size, cfg->offload_min_size);
+                  r->unparsed_uri, (int) FINFO_SIZE(r), 
+                  (int) cfg->offload_min_size);
         return DECLINED;
     } /* if */
 
     /* is this request from one of the listed offload servers? DECLINED */
-    list = (struct in_addr *) cfg->offload_ips->elts;
+    list = (apr_sockaddr_t *) cfg->offload_ips->elts;
     for (i = 0; i < cfg->offload_ips->nelts; i++) {
-        if (r->connection->remote_addr.sin_addr.s_addr == list[i].s_addr) {
+        #if TARGET_APACHE_1_3
+        int match=(r->connection->remote_addr.sin_addr.s_addr==list[i].s_addr);
+        #else
+        int match = apr_sockaddr_equal(r->connection->remote_addr, &list[i]);
+        #endif
+        if (match)
+        {
             offload_host = ((char **) cfg->offload_hosts->elts)[i];
             debugLog(r, cfg, "Offload server (%s) doing cache refresh on '%s'",
                         offload_host, r->unparsed_uri);
@@ -224,7 +275,8 @@ static int offload_handler(request_rec *r)
         for (i = 0; i < cfg->offload_exclude_mime->nelts; i++)
         {
             char *mimetype = ((char **) cfg->offload_exclude_mime->elts)[i];
-            if (ap_fnmatch(mimetype, r->content_type, FNM_CASE_BLIND) == 0) {
+            if (wild_match(mimetype, r->content_type))
+            {
                 debugLog(r, cfg,
                     "URI '%s' (%s) is excluded from offloading"
                     " by mimetype pattern '%s'", r->unparsed_uri,
@@ -235,13 +287,14 @@ static int offload_handler(request_rec *r)
     } /* if */
 
     /* is this User-Agent excluded from offloading (like Google)? DECLINED */
-    user_agent = (const char *) ap_table_get(r->headers_in, "User-Agent");
+    user_agent = (const char *) apr_table_get(r->headers_in, "User-Agent");
     if ((user_agent) && (cfg->offload_exclude_agents->nelts))
     {
         for (i = 0; i < cfg->offload_exclude_agents->nelts; i++)
         {
             char *agent = ((char **) cfg->offload_exclude_agents->elts)[i];
-            if (ap_fnmatch(agent, user_agent, FNM_CASE_BLIND) == 0) {
+            if (wild_match(agent, user_agent))
+            {
                 debugLog(r, cfg,
                     "URI request '%s' from agent '%s' is excluded from"
                     " offloading by User-Agent pattern '%s'",
@@ -258,25 +311,25 @@ static int offload_handler(request_rec *r)
     debugLog(r, cfg, "Chose server #%d (%s)", idx, offload_host);
 
     /* Offload it: set a "Location:" header and 302 redirect. */
-    uri = ap_pstrcat(r->pool, "http://", offload_host, r->unparsed_uri, NULL);
+    uri = apr_pstrcat(r->pool, "http://", offload_host, r->unparsed_uri, NULL);
     debugLog(r, cfg, "Redirect from '%s' to '%s'", r->unparsed_uri, uri);
 
-    ap_table_setn(r->headers_out, "Location", uri);
+    apr_table_setn(r->headers_out, "Location", uri);
     return HTTP_TEMPORARY_REDIRECT;
 } /* offload_handler */
 
 
-static void *create_offload_dir_config(pool *p, char *dummy)
+static void *create_offload_dir_config(apr_pool_t *p, char *dummy)
 {
     offload_dir_config *retval =
-      (offload_dir_config *) ap_palloc(p, sizeof(offload_dir_config));
+      (offload_dir_config *) apr_palloc(p, sizeof (offload_dir_config));
 
     retval->offload_engine_on = 0;
     retval->offload_debug = 0;
-    retval->offload_hosts = ap_make_array(p, 0, sizeof (char *));
-    retval->offload_exclude_mime = ap_make_array(p, 0, sizeof (char *));
-    retval->offload_exclude_agents = ap_make_array(p, 0, sizeof (char *));
-    retval->offload_ips = ap_make_array(p, 0, sizeof (struct in_addr));
+    retval->offload_hosts = apr_array_make(p, 0, sizeof (char *));
+    retval->offload_exclude_mime = apr_array_make(p, 0, sizeof (char *));
+    retval->offload_exclude_agents = apr_array_make(p, 0, sizeof (char *));
+    retval->offload_ips = apr_array_make(p, 0, sizeof (apr_sockaddr_t));
     retval->offload_min_size = DEFAULT_MIN_OFFLOAD_SIZE;
     
     return retval;
@@ -303,14 +356,24 @@ static const char *offload_host(cmd_parms *parms, void *mconfig,
                                 const char *arg)
 {
     offload_dir_config *cfg = (offload_dir_config *) mconfig;
-    char **hostelem = (char **) ap_push_array(cfg->offload_hosts);
-    struct in_addr *addr = (struct in_addr *) ap_push_array(cfg->offload_ips);
+    char **hostelem = (char **) apr_array_push(cfg->offload_hosts);
+    apr_sockaddr_t *addr = (apr_sockaddr_t *) apr_array_push(cfg->offload_ips);
+
+    #if TARGET_APACHE_1_3
     struct hostent *hp = ap_pgethostbyname(parms->pool, arg);
     if (hp == NULL)
         return "DNS lookup failure!";
+    memcpy(addr, (apr_sockaddr_t *) (hp->h_addr), sizeof (apr_sockaddr_t));
+    #else
+    apr_sockaddr_t *resolved = NULL;
+    apr_status_t rc;
+    rc = apr_sockaddr_info_get(&resolved, arg, APR_UNSPEC, 0, 0, parms->pool);
+    if (rc != APR_SUCCESS)
+        return "DNS lookup failure!";
+    memcpy(addr, resolved, sizeof (apr_sockaddr_t));
+    #endif
 
-    memcpy(addr, (struct in_addr *) (hp->h_addr), sizeof (struct in_addr));
-    *hostelem = ap_pstrdup(parms->pool, arg);
+    *hostelem = apr_pstrdup(parms->pool, arg);
     return NULL;  /* no error. */
 } /* offload_host */
 
@@ -328,8 +391,8 @@ static const char *offload_excludemime(cmd_parms *parms, void *mconfig,
                                        const char *arg)
 {
     offload_dir_config *cfg = (offload_dir_config *) mconfig;
-    char **mimepattern = (char **) ap_push_array(cfg->offload_exclude_mime);
-    *mimepattern = ap_pstrdup(parms->pool, arg);
+    char **mimepattern = (char **) apr_array_push(cfg->offload_exclude_mime);
+    *mimepattern = apr_pstrdup(parms->pool, arg);
     return NULL;  /* no error. */
 } /* offload_excludemime */
 
@@ -338,34 +401,36 @@ static const char *offload_excludeagent(cmd_parms *parms, void *mconfig,
                                         const char *arg)
 {
     offload_dir_config *cfg = (offload_dir_config *) mconfig;
-    char **agentpattern = (char **) ap_push_array(cfg->offload_exclude_agents);
-    *agentpattern = ap_pstrdup(parms->pool, arg);
+    char **agentpattern = (char **) apr_array_push(cfg->offload_exclude_agents);
+    *agentpattern = apr_pstrdup(parms->pool, arg);
     return NULL;  /* no error. */
 } /* offload_excludeagent */
 
 
-static void init_offload(server_rec *s, pool *p)
+static const command_rec offload_cmds[] =
 {
-    ap_add_version_component("mod_offload/"MOD_OFFLOAD_VERSION);
-} /* init_offload */
-
-
-static command_rec offload_cmds[] = {
-{ "OffloadEngine", offload_engine, NULL, OR_OPTIONS, FLAG,
-    "Set to On or Off to enable or disable offloading" },
-{ "OffloadDebug", offload_debug, NULL, OR_OPTIONS, FLAG,
-    "Set to On or Off to enable or disable debug spam to error log" },
-{ "OffloadHost", offload_host, NULL, OR_OPTIONS, TAKE1,
-    "Hostname or IP address of offload server" },
-{ "OffloadMinSize", offload_minsize, NULL, OR_OPTIONS, TAKE1,
-    "Minimum size, in bytes, that a file must be to be offloaded" },
-{ "OffloadExcludeMimeType", offload_excludemime, NULL, OR_OPTIONS, TAKE1,
-    "Mimetype to always exclude from offloading (wildcards allowed)" },
-{ "OffloadExcludeUserAgent", offload_excludeagent, NULL, OR_OPTIONS, TAKE1,
-    "User-Agent to always exclude from offloading (wildcards allowed)" },
-{ NULL }
+    AP_INIT_FLAG("OffloadEngine", offload_engine, NULL, OR_OPTIONS,
+      "Set to On or Off to enable or disable offloading"),
+    AP_INIT_FLAG("OffloadDebug", offload_debug, NULL, OR_OPTIONS,
+      "Set to On or Off to enable or disable debug spam to error log"),
+    AP_INIT_TAKE1("OffloadHost", offload_host, NULL, OR_OPTIONS,
+      "Hostname or IP address of offload server"),
+    AP_INIT_TAKE1("OffloadMinSize", offload_minsize, NULL, OR_OPTIONS,
+      "Minimum size, in bytes, that a file must be to be offloaded"),
+    AP_INIT_TAKE1("OffloadExcludeMimeType",offload_excludemime,0,OR_OPTIONS,
+      "Mimetype to always exclude from offloading (wildcards allowed)"),
+    AP_INIT_TAKE1("OffloadExcludeUserAgent",offload_excludeagent,0,OR_OPTIONS,
+      "User-Agent to always exclude from offloading (wildcards allowed)"),
+    { NULL }
 };
 
+
+/* Tell Apache what phases of the transaction we handle */
+#if TARGET_APACHE_1_3
+static void init_offload(server_rec *s, apr_pool_t *p)
+{
+    ap_add_version_component(VERSION_COMPONENT);
+} /* init_offload */
 
 /* Make the name of the content handler known to Apache */
 static handler_rec offload_handlers[] =
@@ -375,9 +440,7 @@ static handler_rec offload_handlers[] =
     { NULL , NULL }
 };
 
-
-/* Tell Apache what phases of the transaction we handle */
-module MODULE_VAR_EXPORT offload_module =
+module AP_MODULE_DECLARE_DATA offload_module =
 {
     STANDARD_MODULE_STUFF,
     init_offload,               /* module initializer                 */
@@ -399,6 +462,33 @@ module MODULE_VAR_EXPORT offload_module =
     NULL,                       /* process exit/cleanup               */
     NULL                        /* [1]  post read_request handling    */
 };
+
+#else  /* Apache 2.0 module API ... */
+
+int offload_init(apr_pool_t *p, apr_pool_t *plog, apr_pool_t *ptemp,
+                 server_rec *base_server)
+{
+    ap_add_version_component(p, VERSION_COMPONENT);
+    return OK;
+} /* init_offload */
+
+static void offload_register_hooks(apr_pool_t *p)
+{
+    ap_hook_post_config(offload_init, NULL, NULL, APR_HOOK_MIDDLE);
+    ap_hook_handler(offload_handler, NULL, NULL, APR_HOOK_LAST);
+} /* offload_register_hooks */
+
+module AP_MODULE_DECLARE_DATA offload_module =
+{
+    STANDARD20_MODULE_STUFF,
+    create_offload_dir_config,  /* create per-directory config structures */
+    NULL,                       /* merge per-directory config structures  */
+    NULL,                       /* create per-server config structures    */
+    NULL,                       /* merge per-server config structures     */
+    offload_cmds,               /* command handlers */
+    offload_register_hooks      /* register hooks */
+};
+#endif
 
 /* end of mod_offload.c ... */
 
