@@ -57,6 +57,16 @@
 //
 //   AliasMatch ^.*$ "/www/scripts/index.php"
 //
+// If you don't have control over the virtual host's config file, you can't
+//  use AliasMatch, but if you can put an .htaccess file in the root of the
+//  virtual host, you can get away with this:
+//
+//   ErrorDocument 404 /index.php
+//
+// This will make all missing files (everything) run the script, which will
+//  then cache and distribute the correct content. Be careful about files
+//  that DO exist in that vhost directory, though. They won't offload.
+//
 // You can offload multiple base servers with one box: set up one virtual host
 //  on the offload server for each base server. This lets each base server
 //  have its own cache and configuration.
