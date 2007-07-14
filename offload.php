@@ -761,7 +761,7 @@ terminate();
 //    --ryan.
 class HTTP
 {
-    function Date($time = null)
+    static function Date($time = null)
     {
         if (!isset($time)) {
             $time = time();
@@ -820,7 +820,7 @@ class HTTP
         return $default;
     }
 
-    function head($url, $timeout = 10)
+    static function head($url, $timeout = 10)
     {
         $p = parse_url($url);
         if (!isset($p['scheme'])) {
@@ -956,3 +956,5 @@ class HTTP
 
 
 ?>
+
+
