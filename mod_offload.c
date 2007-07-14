@@ -77,6 +77,7 @@
  *  - Is the desired file really there?
  *  - Is the desired file more than OffloadMinSize?
  *  - Is the request from someone other than an offload server?
+ *  - Is the request not explicitly trying to bypass offloading?
  *  - Is the desired file's mimetype not listed in OffloadExcludeMimeType?
  *  - Is the client's User-Agent not listed in OffloadExcludeUserAgent?
  *
@@ -99,7 +100,7 @@
 #include "http_main.h"
 #include "http_protocol.h"
 
-#define MOD_OFFLOAD_VER "0.0.5"
+#define MOD_OFFLOAD_VER "0.0.8"
 #define DEFAULT_MIN_OFFLOAD_SIZE (5 * 1024)
 #define VERSION_COMPONENT "mod_offload/"MOD_OFFLOAD_VER
 
@@ -180,6 +181,7 @@ static int offload_handler(request_rec *r)
     int idx = 0;
     char *offload_host = NULL;
     const char *user_agent = NULL;
+    const char *bypass = NULL;
 
     cfg = (offload_dir_config *) ap_get_module_config(r->per_dir_config,
                                                       &offload_module);
@@ -266,6 +268,14 @@ static int offload_handler(request_rec *r)
             return DECLINED;
         } /* if */
     } /* for */
+
+    /* Is this an explicit request to bypass offloading? DECLINED */
+    bypass = (const char *) apr_table_get(r->headers_in, "X-Mod-Offload-Bypass");
+    if (bypass) {
+        debugLog(r, cfg, "Client explicitly bypassing offloading for '%s'",
+                 r->unparsed_uri);
+        return DECLINED;
+    } /* if */
 
     /* is the file in the list of mimetypes to never offload? DECLINED */
     if ((r->content_type) && (cfg->offload_exclude_mime->nelts))

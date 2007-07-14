@@ -70,7 +70,7 @@
 require_once './offload_server_config.php';
 require_once 'PEAR.php';
 
-define('GVERSION', '0.0.7');
+define('GVERSION', '0.0.8');
 $GServerString = 'offload.php version ' . GVERSION;
 
 $Guri = $_SERVER['REQUEST_URI'];
@@ -585,10 +585,10 @@ else
         ignore_user_abort(true);  // if we're caching, we MUST run to completion!
 
         $frombaseserver = true;
-        $io = @fopen($origurl, 'rb');  // !!! FIXME: may block, don't hold semaphore here!
+        $io = NULL;
+        $getheaders = HTTP::get($io, $origurl, GTIMEOUT);  // !!! FIXME: may block, don't hold semaphore here!
         if ($io === false)
             failure('503 Service Unavailable', "Couldn't stream file to cache.");
-
         stream_set_blocking($io, false);
         stream_set_timeout($io, 60);
 
@@ -875,6 +875,63 @@ class HTTP
         return $headers;
     }
 
+    static function get(&$fp, $url, $timeout = 10)
+    {
+        $p = parse_url($url);
+        if (!isset($p['scheme'])) {
+            $p = parse_url(HTTP::absoluteURI($url));
+        } elseif ($p['scheme'] != 'http') {
+            return HTTP::raiseError('Unsupported protocol: '. $p['scheme']);
+        }
+
+        $port = isset($p['port']) ? $p['port'] : 80;
+
+        //debugEcho(array($p['host'], $port, $eno, $estr, $timeout));
+        $fp = @fsockopen($p['host'], $port, $eno, $estr, $timeout);
+        if ($fp === false) {
+            if ($eno == 0) {  // dns lookup failure seems to trigger this. --ryan.
+                sleep(3);
+                $fp = @fsockopen($p['host'], $port, $eno, $estr, $timeout);
+                if ($fp === false) {
+                    return HTTP::raiseError("Connection error: $estr ($eno)");
+                }
+            }
+        }
+
+        $path  = !empty($p['path']) ? $p['path'] : '/';
+        $path .= !empty($p['query']) ? '?' . $p['query'] : '';
+
+        if (@fputs($fp, "GET $path HTTP/1.0\r\n") === false)
+            return HTTP::raiseError("i/o error");
+
+        if (@fputs($fp, 'Host: ' . $p['host'] . ':' . $port . "\r\n") === false)
+            return HTTP::raiseError("i/o error");
+
+        if (@fputs($fp, "Connection: close\r\n") === false)
+            return HTTP::raiseError("i/o error");
+
+        if (@fputs($fp, "X-Mod-Offload-Bypass: true\r\n\r\n") === false)
+            return HTTP::raiseError("i/o error");
+
+        $response = rtrim(fgets($fp, 4096));
+        if (preg_match("|^HTTP/[^\s]*\s(.*?)\s|", $response, $status)) {
+            $headers['response_code'] = $status[1];
+        }
+        $headers['response'] = $response;
+
+        while ($line = @fgets($fp, 4096)) {
+            if (trim($line) == '') {
+                break;
+            }
+            if (($pos = strpos($line, ':')) !== false) {
+                $header = substr($line, 0, $pos);
+                $value  = trim(substr($line, $pos + 1));
+                $headers[$header] = $value;
+            }
+        }
+        return $headers;
+    }
+
     function absoluteURI($url = null, $protocol = null, $port = null)
     {
         // filter CR/LF
@@ -956,5 +1013,3 @@ class HTTP
 
 
 ?>
-
-
