@@ -64,8 +64,9 @@
 //   ErrorDocument 404 /index.php
 //
 // This will make all missing files (everything) run the script, which will
-//  then cache and distribute the correct content. Be careful about files
-//  that DO exist in that vhost directory, though. They won't offload.
+//  then cache and distribute the correct content, including overriding the
+//  404 status code with the correct one. Be careful about files that DO exist
+//  in that vhost directory, though. They won't offload.
 //
 // You can offload multiple base servers with one box: set up one virtual host
 //  on the offload server for each base server. This lets each base server
@@ -220,7 +221,12 @@ function terminate()
 function doHeader($str)
 {
     if ((!GDEBUG) || (GDEBUGTOFILE))
-        header($str);
+    {
+        header($str, true);
+        if (headers_sent($filename, $linenum)) 
+            debugEcho("Headers already sent in $filename on line $linenum");
+    }
+
     debugEcho("header('$str');");
 } // doHeader
 
@@ -519,7 +525,7 @@ if ($ishead)
 $max = $head['Content-Length'];
 $startRange = 0;
 $endRange = $max-1;
-$responseCode = 'HTTP/1.1 200 OK';
+$responseCode = '200 OK';
 $reportRange = 0;
 
 if (isset($HTTP_SERVER_VARS['HTTP_IF_RANGE']))
@@ -551,7 +557,7 @@ if (isset($HTTP_SERVER_VARS['HTTP_RANGE']))
                 $startRange = 0;
             if (strcmp($endRange, '') == 0)
                 $endRange = $max-1;
-            $responseCode = 'HTTP/1.1 206 Partial Content';
+            $responseCode = '206 Partial Content';
             $reportRange = 1;
         } // if
     } // else
@@ -640,7 +646,7 @@ else
     putSemaphore();
 } // else
 
-doHeader($responseCode);
+doHeader('Status: ' . $responseCode);
 doHeader('Date: ' . HTTP::date());
 doHeader('Server: ' . $GServerString);
 doHeader('Connection: close');
