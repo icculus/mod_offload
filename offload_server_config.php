@@ -17,7 +17,7 @@ define('GTIMEOUT', 90);
 define('GOFFLOADDIR', '/usr/local/apache/offload');
 
 // Set GDEBUGTOFILE to write all debug info to files in GOFFLOADDIR, if
-//  GDEBUG is also true. You want this to be false in normal use.
+//  GDEBUG is also true. You probably want this to be true most cases.
 define('GDEBUGTOFILE', true);
 
 // Set GUSESEMAPHORE to true to use sem_acquire() for locking.
