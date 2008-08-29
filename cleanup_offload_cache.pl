@@ -67,29 +67,31 @@ foreach (@ARGV) {
 usage() if (not defined $offloaddir);
 
 opendir(DIRH, $offloaddir) || die("Couldn't open directory [$offloaddir]: $!");
-my @dirfiles = readdir(DIRH);
-closedir(DIRH);
 
 my $diskrecovered = 0;
+my $filesseen = 0;
+my $filesdelete = 0;
+my $totalfilespace = 0;
 
-@dirfiles = sort(@dirfiles);
-
-foreach (@dirfiles) {
+while (my $f = readdir(DIRH)) {
     # '7' is the file size info in stat().
     my $filespace = 0;
 
-    my $f = $_;
-    if (/\Adebug-/) {
+    $filesseen++;
+
+    if ($f =~ /\Adebug-/) {
         print(" - Deleting debug file '$f'.\n");
         my @statbuf = (stat($f));
         my $size = 0;
         $size = $statbuf[7] if @statbuf;
         $diskrecovered += $size;
+        $totalfilespace += $size;
+        $filesdelete++;
         unlink("$offloaddir/$f");
     }
 
-    next if not /\A(meta|file)data-/;
-    my ($filetype, $etag) = /\A(meta|file)data-(.*)\Z/;
+    next if (not $f =~ /\A(meta|file)data-/);
+    my ($filetype, $etag) = ($f =~ /\A(meta|file)data-(.*)\Z/);
     my $metadatapath = $offloaddir . '/metadata-' . $etag;
     my $filedatapath = $offloaddir . '/filedata-' . $etag;
 
@@ -97,9 +99,12 @@ foreach (@dirfiles) {
     $filespace += (stat($metadatapath))[7] if (-f $metadatapath);
     $filespace += $filecachesize if (-f $filedatapath);
 
+    $totalfilespace += $filespace;
+
     if ((not -f $filedatapath) || (not -f $metadatapath)) {
         unlink $metadatapath;
         unlink $filedatapath;
+        $filesdelete++;
         $diskrecovered += $filespace;
         next;
     }
@@ -117,6 +122,7 @@ foreach (@dirfiles) {
         $diskrecovered += $filespace;
         unlink $metadatapath;
         unlink $filedatapath;
+        $filesdelete++;
         next;
     }
 
@@ -153,11 +159,15 @@ foreach (@dirfiles) {
         $diskrecovered += $filespace;
         unlink $metadatapath;
         unlink $filedatapath;
+        $filesdelete++;
     } else {
         print("KEEP!\n");
     }
 }
 
-print("\n\nRecovered $diskrecovered bytes of disk space.\n");
+closedir(DIRH);
+
+print("Recovered $diskrecovered bytes of $totalfilespace.\n");
+print("$filesseen files seen, $filesdelete deleted.\n");
 exit 0;
 
