@@ -350,7 +350,7 @@ function failure($httperr, $errmsg, $location = NULL)
     if (isset($location))
         doHeader('Location: ' . $location);
     doHeader('Connection: close');
-    doHeader('Content-type: text/plain');
+    doHeader('Content-type: text/plain; charset=utf-8');
     print("$errmsg\n");
     terminate();
 } // failure
@@ -427,7 +427,7 @@ function debugInit()
     global $Guri;
     if (GDEBUG)
     {
-        header('Content-type: text/plain');
+        header('Content-type: text/plain; charset=utf-8');
         debugEcho('');
         debugEcho('');
         debugEcho('');
