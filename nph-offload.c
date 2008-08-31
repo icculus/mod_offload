@@ -86,6 +86,7 @@
 #include <errno.h>
 #include <semaphore.h>
 #include <limits.h>
+#include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/socket.h>
 #include <netdb.h>
