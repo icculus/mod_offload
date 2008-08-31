@@ -613,6 +613,7 @@ static void debugInit(int argc, char **argv, char **envp)
     debugEcho("Request from address: %s", getenv("REMOTE_ADDR"));
     debugEcho("Client User-Agent: %s", getenv("HTTP_USER_AGENT"));
     debugEcho("Referrer string: %s", getenv("HTTP_REFERER"));
+    debugEcho("Request method: %s", getenv("REQUEST_METHOD"));
     debugEcho("Timeout for HTTP HEAD request is %d", GTIMEOUT);
     debugEcho("Data cache goes in %s", GOFFLOADDIR);
     debugEcho("My PID: %d\n", (int) getpid());
@@ -861,7 +862,7 @@ int main(int argc, char **argv, char **envp)
 {
     Guri = getenv("REQUEST_URI");
 
-    debugInit(argv, argv, envp);
+    debugInit(argc, argv, envp);
     if ((Guri == NULL) || (*Guri != '/'))
         failure("500 Internal Server Error", "Bad request URI");
 
