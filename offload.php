@@ -82,7 +82,7 @@ require_once './offload_server_config.php';
 require_once 'PEAR.php';
 
 define('GVERSION', '1.0.0');
-$GServerString = 'offload.php version ' . GVERSION;
+$GServerString = 'offload.php/' . GVERSION;
 
 $Guri = $_SERVER['REQUEST_URI'];
 if (strcmp($Guri{0}, '/') != 0)
