@@ -475,7 +475,7 @@ static int process_dead(int pid)
     struct stat statbuf;
     char fname[64];
     snprintf(fname, sizeof (fname), "/proc/%d", pid);
-    return ((stat(fname, &statbuf) != -1) && (S_ISDIR(statbuf.st_mode)));
+    return ((stat(fname, &statbuf) == -1) || (S_ISDIR(statbuf.st_mode)) == 0);
 } // process_dead
 
 
