@@ -607,6 +607,7 @@ static void debugInit()
     debugEcho("Offload Debug Run!");
     debugEcho("%s", "");
     printf_date_header(getDebugFilePointer());
+    debugEcho("I am: %s", GSERVERSTRING);
     debugEcho("Base server: %s", GBASESERVER);
     debugEcho("User wants to get: %s", Guri);
     debugEcho("Request from address: %s", getenv("REMOTE_ADDR"));
