@@ -752,16 +752,15 @@ while ($br < $endRange)
 
 debugEcho('Transfer is complete.');
 
+
 if (isset($cacheio))
-{
     @fclose($cacheio);
-    $cacheio = NULL;
-} // if
 
 if ($br != $endRange)
 {
     debugEcho("Bogus transfer! Sent $br, wanted to send $endRange!");
-    nukeRequestFromCache();
+    if ($frombaseserver)
+        nukeRequestFromCache();
 } // if
 
 terminate();
