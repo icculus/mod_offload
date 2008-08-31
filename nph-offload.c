@@ -738,6 +738,7 @@ static void doWrite(const int fd, const char *str)
 
 static int doHttp(const char *method, list **headers)
 {
+    int rc = -1;
     struct addrinfo hints;
     memset(&hints, '\0', sizeof (hints));
     hints.ai_family = AF_UNSPEC;
@@ -745,8 +746,11 @@ static int doHttp(const char *method, list **headers)
     hints.ai_flags = AI_NUMERICSERV | AI_V4MAPPED | AI_ADDRCONFIG;
 
     struct addrinfo *dns = NULL;
-    if (getaddrinfo(GBASESERVER, "80", &hints, &dns) != 0)
+    if ((rc = getaddrinfo(GBASESERVER, "80", &hints, &dns)) != 0)
+    {
+        debugEcho("getaddrinfo failure: %s", gai_strerror(rc));
         failure("503 Service Unavailable", "Offload base server hostname lookup failure.");
+    } // if
 
     int fd = -1;
     struct addrinfo *addr;
