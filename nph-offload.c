@@ -107,6 +107,17 @@
 #undef max
 #endif
 
+// some getaddrinfo() flags that may not exist...
+#ifndef AI_ADDRCONFIG
+#define AI_ADDRCONFIG 0
+#endif
+#ifndef AI_NUMERICSERV
+#define AI_NUMERICSERV 0
+#endif
+#ifndef AI_V4MAPPED
+#define AI_V4MAPPED 0
+#endif
+
 typedef int64_t int64;
 
 static char *Guri = NULL;
@@ -727,8 +738,14 @@ static void doWrite(const int fd, const char *str)
 
 static int doHttp(const char *method, list **headers)
 {
+    struct addrinfo hints;
+    memset(&hints, '\0', sizeof (hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_NUMERICSERV | AI_V4MAPPED | AI_ADDRCONFIG;
+
     struct addrinfo *dns = NULL;
-    if (getaddrinfo(GBASESERVER, "80", NULL, &dns) != 0)
+    if (getaddrinfo(GBASESERVER, "80", &hints, &dns) != 0)
         failure("503 Service Unavailable", "Offload base server hostname lookup failure.");
 
     int fd = -1;
