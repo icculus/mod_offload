@@ -1159,24 +1159,16 @@ int main(int argc, char **argv)
 
     debugEcho("Transfer is complete.");
 
-    if (br == endRange)
-    {
-        if (cacheio != NULL)
-            fclose(cacheio);
-    } // if
+    if (cacheio != NULL)
+        fclose(cacheio);
 
-    else
+    if (br != endRange)
     {
         debugEcho("Bogus transfer! Sent %lld, wanted to send %lld!",
                   (long long) br, (long long) endRange);
-        if (cacheio != NULL)
-        {
-            fclose(cacheio);
+        if (frombaseserver)
             nukeRequestFromCache();
-        } // if
     } // else
-
-    cacheio = NULL;
 
     terminate();  // done!
     return 0;
