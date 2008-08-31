@@ -87,6 +87,7 @@
 #include <semaphore.h>
 #include <limits.h>
 #include <fcntl.h>
+#include <signal.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/socket.h>
@@ -471,11 +472,7 @@ static list *loadMetadata(const char *fname)
 
 static int process_dead(int pid)
 {
-    // !!! FIXME: Linux specific!
-    struct stat statbuf;
-    char fname[64];
-    snprintf(fname, sizeof (fname), "/proc/%d", pid);
-    return ((stat(fname, &statbuf) == -1) || (S_ISDIR(statbuf.st_mode)) == 0);
+    return ( (pid <= 0) || ((kill(pid, 0) == -1) && (errno == ESRCH)) );
 } // process_dead
 
 
