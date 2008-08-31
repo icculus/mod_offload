@@ -3,7 +3,7 @@
 
 // GDEBUG should be false at production time, but this lets you sanity check
 //  some things before going live.
-#define GDEBUG 1
+#define GDEBUG 0
 
 // This is a list of servers that you are offloading.
 #define GBASESERVER "icculus.org"
