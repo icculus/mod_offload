@@ -121,6 +121,7 @@
 
 typedef int64_t int64;
 
+static int GIsCacheProcess = 0;
 static char *Guri = NULL;
 static char *GFilePath = NULL;
 static char *GMetaDataPath = NULL;
@@ -165,6 +166,9 @@ static void debugEcho(const char *fmt, ...)
         #endif
         if (fp != NULL)
         {
+            if (GIsCacheProcess)
+                fputs("(cache process) ", fp);
+
             va_list ap;
             va_start(ap, fmt);
             vfprintf(fp, fmt, ap);
@@ -357,6 +361,7 @@ static void *createSemaphore(const int initialVal)
     if ((retval == (void *) SEM_FAILED) && (errno == EEXIST))
     {
         created = 0;
+        debugEcho("(semaphore already exists, just opening existing one.)");
         retval = sem_open(semname, 0);
     } // if
 
@@ -407,13 +412,15 @@ static void putSemaphore(void)
 
 static void terminate(void)
 {
-    debugEcho("offload script is terminating...");
-    while (GSemaphoreOwned > 0)
-        putSemaphore();
+    if (!GIsCacheProcess)
+    {
+        debugEcho("offload program is terminating...");
+        while (GSemaphoreOwned > 0)
+            putSemaphore();
+    } // if
 
     if (GDebugFilePointer != NULL)
         fclose(GDebugFilePointer);
-
     exit(0);
 } // terminate
 
@@ -556,16 +563,20 @@ static void failure_location(const char *httperr, const char *errmsg,
     debugEcho("  %s", httperr);
     debugEcho("  %s", errmsg);
 
-    printf("HTTP/1.1 %s\r\n", httperr);
-    printf("Status: %s\r\n", httperr);
-    printf("Server: %s\r\n", GSERVERSTRING);
-    printf_date_header(stdout);
-    if (location != NULL)
-        printf("Location: %s\r\n", location);
-    printf("Connection: close\r\n");
-    printf("Content-type: text/plain; charset=utf-8\r\n");
-    printf("\r\n");
-    printf("%s\n\n", errmsg);
+    if (stdout != NULL)
+    {
+        printf("HTTP/1.1 %s\r\n", httperr);
+        printf("Status: %s\r\n", httperr);
+        printf("Server: %s\r\n", GSERVERSTRING);
+        printf_date_header(stdout);
+        if (location != NULL)
+            printf("Location: %s\r\n", location);
+        printf("Connection: close\r\n");
+        printf("Content-type: text/plain; charset=utf-8\r\n");
+        printf("\r\n");
+        printf("%s\n\n", errmsg);
+    } // if
+
     terminate();
 } // failure_location
 
@@ -855,6 +866,139 @@ static char *etagToCacheFname(const char *etag)
 } // etagToCacheFname
 
 
+static int selectReadable(const int fd)
+{
+    const time_t endtime = time(NULL) + GTIMEOUT;
+    fd_set rfds;
+    int rc = 0;
+
+    while (1)
+    {
+        struct timeval tv;
+        const time_t now = time(NULL);
+
+        if (endtime >= now)
+        {
+            FD_ZERO(&rfds);
+            FD_SET(fd, &rfds);
+            tv.tv_sec = endtime - now;
+            tv.tv_usec = 0;
+            rc = select(fd+1, &rfds, NULL, NULL, &tv);
+            if ((rc < 0) && (errno == EINTR))
+                continue;   // just try again with adjusted timeout.
+        } // if
+
+        break;
+    } // while
+
+    if ((rc <= 0) || (FD_ISSET(fd, &rfds) == 0))
+    {
+        debugEcho("select() failed");
+        return 0;
+    } // if
+
+    return 1;
+} // selectReadable
+
+
+static void cacheFailure(const char *err)
+{
+    debugEcho("%s", err);
+    nukeRequestFromCache();
+    terminate();
+} // cacheFailure
+
+
+static void catchsig(int sig)
+{
+    char errbuf[128];
+    snprintf(errbuf, sizeof (errbuf), "caught signal #%d!", sig);
+    cacheFailure(errbuf);
+} // catchsig
+
+
+static inline int64 Min(const int64 a, const int64 b)
+{
+    return (a < b) ? a : b;
+} // Min
+
+
+static int cacheFork(const int sock, FILE *cacheio, const int64 max)
+{
+    const pid_t pid = fork();
+
+    if (pid != 0)  // don't need these any more...
+    {
+        fclose(cacheio);
+        close(sock);
+    } // if
+
+    if (pid == -1)  // failed!
+    {
+        nukeRequestFromCache();
+        failure("500 Internal Server Error", "Couldn't fork for caching.");
+        return 0;
+    } // if
+
+    else if (pid != 0)  // we're the parent.
+    {
+        debugEcho("fork()'d caching process! new pid is (%d).", (int) pid);
+        return 1;
+    } // else if
+
+    // we're the child.
+    GIsCacheProcess = 1;
+    debugEcho("caching process (%d) starting up!", (int) getpid());
+    fclose(stdin);
+    fclose(stdout);
+    fclose(stderr);
+    stdin = NULL;
+    stderr = NULL;
+    stdout = NULL;
+    chdir("/");
+    setsid();
+
+    // try to clean up in most fatal cases.
+    signal(SIGHUP, catchsig);
+    signal(SIGINT, catchsig);
+    signal(SIGTERM, catchsig);
+    signal(SIGPIPE, catchsig);
+    signal(SIGQUIT, catchsig);
+    signal(SIGTRAP, catchsig);
+    signal(SIGABRT, catchsig);
+    signal(SIGBUS, catchsig);
+    signal(SIGSEGV, catchsig);
+
+    int64 br = 0;
+    while (br < max)
+    {
+        int len = 0;
+        char data[32 * 1024];
+        const int readsize = (int) Min(sizeof (data), (max - br));
+
+        if (readsize == 0)
+            cacheFailure("readsize is unexpectedly zero.");
+        else if (!selectReadable(sock))
+            cacheFailure("network timeout");
+        else if ((len = read(sock, data, sizeof (data))) <= 0)
+            cacheFailure("network read error");
+        else if (fwrite(data, len, 1, cacheio) != 1)
+            cacheFailure("fwrite() failed");
+        else if (fflush(cacheio) == EOF)
+            cacheFailure("fflush() failed");
+        br += len;
+        debugEcho("wrote %d bytes to the cache.", len);
+    } // while
+
+    if (fclose(cacheio) == EOF)
+        cacheFailure("fclose() failed");
+
+    debugEcho("Successfully cached! Terminating!");
+    terminate();  // always die.
+    return 0;
+} // cacheFork
+
+
 int main(int argc, char **argv, char **envp)
 {
     Guri = getenv("REQUEST_URI");
@@ -917,8 +1061,6 @@ int main(int argc, char **argv, char **envp)
 
     // !!! FIXME: Check Cache-Control, Pragma no-cache
 
-    FILE *cacheio = NULL;  // will be non-NULL if we're WRITING to the cache...
-    int frombaseserver = 0;
     int io = -1;
 
     if (ishead)
@@ -995,10 +1137,6 @@ int main(int argc, char **argv, char **envp)
         if (cachedMetadataMostRecent(metadata, head))
         {
             listFree(&head);
-
-            io = open(GFilePath, O_RDONLY);
-            if (io == -1)
-                failure("500 Internal Server Error", "Couldn't access cached data.");
             debugEcho("File is cached.");
         } // if
 
@@ -1007,11 +1145,9 @@ int main(int argc, char **argv, char **envp)
             listFree(&metadata);
 
             // we need to pull a new copy from the base server...
-            //ignore_user_abort(true);  // if we're caching, we MUST run to completion!
-            frombaseserver = 1;
-            io = http_get(NULL);  // !!! FIXME: may block, don't hold semaphore here!
+            const int sock = http_get(NULL);  // !!! FIXME: may block, don't hold semaphore here!
 
-            cacheio = fopen(GFilePath, "wb");
+            FILE *cacheio = fopen(GFilePath, "wb");
             if (cacheio == NULL)
             {
                 close(io);
@@ -1022,7 +1158,7 @@ int main(int argc, char **argv, char **envp)
             if (metaout == NULL)
             {
                 fclose(cacheio);
-                close(io);
+                close(sock);
                 nukeRequestFromCache();
                 failure("500 Internal Server Error", "Couldn't update metadata.");
             } // if
@@ -1042,21 +1178,21 @@ int main(int argc, char **argv, char **envp)
             list *item;
             for (item = head; item; item = item->next)
                 fprintf(metaout, "%s\n%s\n", item->key, item->value);
-            fclose(metaout);
+            fclose(metaout);  // !!! FIXME: check for errors
+
             metadata = head;
             debugEcho("Cache needs refresh...pulling from base server...");
+            cacheFork(sock, cacheio, max);
         } // else
 
         putSemaphore();
 
         head = NULL;   // we either moved this to (metadata) or free()d it.
-    } // else
 
-    // done with these.
-    free(GFilePath);
-    GFilePath = NULL;
-    free(GMetaDataPath);
-    GMetaDataPath = NULL;
+        io = open(GFilePath, O_RDONLY);
+        if (io == -1)
+            failure("500 Internal Server Error", "Couldn't access cached data.");
+    } // else
 
     printf("HTTP/1.1 %s\r\n", responseCode);
     printf("Status: %s\r\n", responseCode);
@@ -1085,6 +1221,7 @@ int main(int argc, char **argv, char **envp)
 
     int64 br = 0;
     endRange++;
+    time_t lastReadTime = time(NULL);
     while (br < endRange)
     {
         char data[32 * 1024];
@@ -1096,93 +1233,78 @@ int main(int argc, char **argv, char **envp)
             readsize = (endRange - br);
 
         if (readsize == 0)
-            break;  // Shouldn't hit, but just in case...
-
-        if (frombaseserver)
         {
-            fd_set rfds;
-            struct timeval tv;
-            // one handle, no wait.
-            FD_ZERO(&rfds);
-            FD_SET(io, &rfds);
-            tv.tv_sec = GTIMEOUT;
-            tv.tv_usec = 0;
-
-            const int rc = select(io+1, &rfds, NULL, NULL, &tv);
-            if ((rc <= 0) || (FD_ISSET(io, &rfds) == 0))
-                break;
+            debugEcho("readsize is unexpectedly zero.");
+            break;  // Shouldn't hit, but just in case...
         } // if
 
-        else
+        struct stat statbuf;
+        if (fstat(io, &statbuf) == -1)
         {
-            struct stat statbuf;
-            if (fstat(io, &statbuf) == -1)
-                break;
+            debugEcho("fstat() failed.");
+            break;
+        } // if
 
-            const int64 cursize = statbuf.st_size;
-            if (cursize < max)
+        const int64 cursize = statbuf.st_size;
+        const time_t now = time(NULL);
+        if (cursize < max)
+        {
+            if ((cursize - br) <= 0)  // may be caching on another process.
             {
-                if ((cursize - br) <= readsize)  // may be caching on another process.
+                if (now > (lastReadTime + GTIMEOUT))
                 {
-                    sleep(1);
-                    continue;
+                    debugEcho("timeout: cache file seems to have stalled.");
+                    // !!! FIXME: maybe try to kill() the cache process?
+                    break;   // oh well, give up.
                 } // if
+
+                sleep(1);   // wait awhile...
+                continue;   // ...then try again.
             } // if
         } // else
+
+        lastReadTime = now;
 
         const int len = read(io, data, readsize);
         if (len <= 0)
+        {
+            debugEcho("read() failed");
             break;   // select() and fstat() should have caught this...
-        else
-        {
-            if (cacheio != NULL)
-            {
-                if (fwrite(data, len, 1, cacheio) != 1)
-                    break;
-                else if (fflush(cacheio) == EOF)
-                    break;
-            } // if
-
-            if (!feof(stdout))
-            {
-                if ((br >= startRange) && (br < endRange))
-                {
-                    #if ((GDEBUG) && (!GDEBUGTOFILE))
-                    debugEcho("Would have written %d bytes", len);
-                    #elif ((!GDEBUG) || (GDEBUGTOFILE))
-                    if (fwrite(data, len, 1, stdout) != 1)
-                    {
-                        debugEcho("FAILED to write %d bytes!", len);
-                        break;
-                    } // if
-                    debugEcho("Wrote %d bytes", len);
-                    #endif
-                } // if
-            } // if
-            br += len;
-        } // else
-
-        // If this connection is cacheing from base server, we have to keep going.
-        if ((br == endRange) && (cacheio != NULL) && (br != max))
-        {
-            debugEcho("Sent complete request, but am pulling from base server!");
-            endRange = max;
         } // if
+
+        if (feof(stdout))
+        {
+            debugEcho("EOF on stdout!");
+            break;
+        } // if
+
+        else if ((br >= startRange) && (br < endRange))
+        {
+            #if ((GDEBUG) && (!GDEBUGTOFILE))
+            debugEcho("Would have written %d bytes", len);
+            #elif ((!GDEBUG) || (GDEBUGTOFILE))
+            if (fwrite(data, len, 1, stdout) == 1)
+                debugEcho("Wrote %d bytes", len);
+            else
+            {
+                debugEcho("FAILED to write %d bytes to client!", len);
+                break;
+            } // else
+            #endif
+        } // else if
+
+        br += len;
     } // while
 
+    debugEcho("closing cache file...");
     close(io);
 
-    debugEcho("Transfer is complete.");
-
-    if (cacheio != NULL)
-        fclose(cacheio);
+    debugEcho("Transfer loop is complete.");
 
     if (br != endRange)
     {
         debugEcho("Bogus transfer! Sent %lld, wanted to send %lld!",
                   (long long) br, (long long) endRange);
-        if (frombaseserver)
-            nukeRequestFromCache();
     } // else
 
     terminate();  // done!
