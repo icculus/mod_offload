@@ -179,7 +179,7 @@ static void printf_date_header(FILE *out)
     };
 
     if (out == NULL)
-        out = stdout;
+        return;
 
     time_t now = time(NULL);
     const struct tm *tm = gmtime(&now);
@@ -551,7 +551,7 @@ static void failure_location(const char *httperr, const char *errmsg,
     printf("HTTP/1.1 %s\r\n", httperr);
     printf("Status: %s\r\n", httperr);
     printf("Server: %s\r\n", GSERVERSTRING);
-    printf_date_header(NULL);
+    printf_date_header(stdout);
     if (location != NULL)
         printf("Location: %s\r\n", location);
     printf("Connection: close\r\n");
@@ -584,7 +584,7 @@ static void debugInit()
     printf("HTTP/1.1 200 OK\r\n");
     printf("Status: 200 OK\r\n");
     printf("Content-type: text/plain; charset=utf-8\r\n");
-    printf_date_header(NULL);
+    printf_date_header(stdout);
     printf("Server: " GSERVERSTRING "\r\n");
     printf("Connection: close\r\n");
     printf("\r\n");
@@ -1023,7 +1023,7 @@ int main(int argc, char **argv)
 
     printf("HTTP/1.1 %s\r\n", responseCode);
     printf("Status: %s\r\n", responseCode);
-    printf_date_header(NULL);
+    printf_date_header(stdout);
     printf("Server: %s\r\n", GSERVERSTRING);
     printf("Connection: close\r\n");
     printf("ETag: %s\r\n", listFind(metadata, "ETag"));
