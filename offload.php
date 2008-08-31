@@ -299,15 +299,14 @@ function cachedMetadataMostRecent($metadata, $head)
         // whoa, we were supposed to cache this!
         if ($metadata['X-Offload-Caching-PID'] == getmypid())
             return(false);
+        else if ($metadata['X-Offload-Caching-PID'] <= 0)
+            return(false);
 
-        // !!! FIXME: Linux specific!
-        if (is_dir('/proc'))
+        // !!! FIXME: Unix specific!
+        if (!posix_kill($metadata['X-Offload-Caching-PID'], 0))
         {
-            if (!is_dir('/proc/' . $metadata['X-Offload-Caching-PID']))
-            {
-                debugEcho('Caching process ID died!');
-                return(false);
-            } // if
+            debugEcho('Caching process ID died!');
+            return(false);
         } // if
     } // if
 
