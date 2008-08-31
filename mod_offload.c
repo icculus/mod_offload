@@ -100,7 +100,7 @@
 #include "http_main.h"
 #include "http_protocol.h"
 
-#define MOD_OFFLOAD_VER "1.0.0"
+#define MOD_OFFLOAD_VER "1.0.1"
 #define DEFAULT_MIN_OFFLOAD_SIZE (5 * 1024)
 #define VERSION_COMPONENT "mod_offload/"MOD_OFFLOAD_VER
 

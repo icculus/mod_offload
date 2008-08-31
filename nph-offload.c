@@ -93,7 +93,7 @@
 #include <sys/socket.h>
 #include <netdb.h>
 
-#define GVERSION "1.0.0"
+#define GVERSION "1.0.1"
 #define GSERVERSTRING "nph-offload.c/" GVERSION
 
 #include "offload_server_config.h"
