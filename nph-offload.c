@@ -153,7 +153,7 @@ static FILE *getDebugFilePointer(void)
 
 
 #if ((!GDEBUG) && defined(__GNUC__))
-#define debugEcho(fmt, ...) do {} while (0);
+#define debugEcho(fmt, ...) do {} while (0)
 #else
 static void debugEcho(const char *fmt, ...) ISPRINTF(1, 2);
 static void debugEcho(const char *fmt, ...)
