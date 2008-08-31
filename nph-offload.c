@@ -128,7 +128,7 @@ static inline void failure(const char *httperr, const char *errmsg)
 
 
 #if ( ((GDEBUG) && (GDEBUGTOFILE)) == 0 )
-#define getDebugFilePointer (NULL)
+#define getDebugFilePointer() (NULL)
 #else
 static FILE *getDebugFilePointer(void)
 {
