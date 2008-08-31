@@ -587,9 +587,9 @@ static int invalidContentRange(const int64 startRange, const int64 endRange,
 
 
 #if !GDEBUG
-#define debugInit()
+#define debugInit(argc, argv, envp)
 #else
-static void debugInit()
+static void debugInit(int argc, char **argv, char **envp)
 {
     #if !GDEBUGTOFILE
     printf("HTTP/1.1 200 OK\r\n");
@@ -616,6 +616,18 @@ static void debugInit()
     debugEcho("Timeout for HTTP HEAD request is %d", GTIMEOUT);
     debugEcho("Data cache goes in %s", GOFFLOADDIR);
     debugEcho("My PID: %d\n", (int) getpid());
+    debugEcho("%s", "");
+    debugEcho("%s", "");
+
+    int i;
+    debugEcho("Command line: %d items...", argc);
+    for (i = 0; i < argc; i++)
+        debugEcho(" argv[%d] = '%s'", i, argv[i]);
+    debugEcho("%s", "");
+    debugEcho("%s", "");
+    debugEcho("Environment...");
+    for (i = 0; envp[i]; i++)
+        debugEcho(" %s", envp[i]);
     debugEcho("%s", "");
     debugEcho("%s", "");
 } // debugInit
@@ -845,11 +857,11 @@ static char *etagToCacheFname(const char *etag)
 } // etagToCacheFname
 
 
-int main(int argc, char **argv)
+int main(int argc, char **argv, char **envp)
 {
     Guri = getenv("REQUEST_URI");
 
-    debugInit();
+    debugInit(argv, argv, envp);
     if ((Guri == NULL) || (*Guri != '/'))
         failure("500 Internal Server Error", "Bad request URI");
 
