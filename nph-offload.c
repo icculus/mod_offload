@@ -870,7 +870,12 @@ int main(int argc, char **argv, char **envp)
     if (strcmp(Guri, "/robots.txt") == 0)
         failure("200 OK", "User-agent: *\nDisallow: /");
 
-    const char *reqmethod = getenv("REQUEST_METHOD");
+    const char *reqmethod = getenv("REDIRECT_REQUEST_METHOD");
+    if (reqmethod == NULL)
+        reqmethod = getenv("REQUEST_METHOD");
+    if (reqmethod == NULL)
+        reqmethod = "GET";
+
     const int isget = (strcasecmp(reqmethod, "GET") == 0);
     const int ishead = (strcasecmp(reqmethod, "HEAD") == 0);
     if ( (strchr(Guri, '?') != NULL) || ((!isget) && (!ishead)) )
