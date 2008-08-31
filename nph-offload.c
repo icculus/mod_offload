@@ -114,12 +114,6 @@ static void *GSemaphore = NULL;
 static int GSemaphoreOwned = 0;
 static FILE *GDebugFilePointer = NULL;
 
-static inline void Free(void **ptr)
-{
-    free(*ptr);
-    *ptr = NULL;
-} // Free
-
 static void failure_location(const char *, const char *, const char *);
 static inline void failure(const char *httperr, const char *errmsg)
 {
@@ -1020,8 +1014,10 @@ int main(int argc, char **argv)
     } // else
 
     // done with these.
-    Free((void **) &GFilePath);
-    Free((void **) &GMetaDataPath);
+    free(GFilePath);
+    GFilePath = NULL;
+    free(GMetaDataPath);
+    GMetaDataPath = NULL;
 
     printf("HTTP/1.1 %s\r\n", responseCode);
     printf("Status: %s\r\n", responseCode);
