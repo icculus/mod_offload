@@ -169,7 +169,7 @@ static void debugEcho(const char *fmt, ...)
 #endif
 
 
-static const char *http_date(char *buf, const int buflen)
+static void printf_date_header(FILE *out)
 {
     // strftime()'s "%a" gives you locale-dependent strings...
     static const char *weekday[] = {
@@ -182,21 +182,14 @@ static const char *http_date(char *buf, const int buflen)
         "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
     };
 
+    if (out == NULL)
+        out = stdout;
+
     time_t now = time(NULL);
     const struct tm *tm = gmtime(&now);
-    snprintf(buf, buflen, "%s, %02d %s %04d %02d:%02d:%02d GMT",
+    fprintf(out, "Date: %s, %02d %s %04d %02d:%02d:%02d GMT\r\n",
              weekday[tm->tm_wday], tm->tm_mday, month[tm->tm_mon],
              tm->tm_year+1900, tm->tm_hour, tm->tm_min, tm->tm_sec);
-
-    return buf;
-} // http_date
-
-
-// separate function so we can throw away this stack buffer immediately.
-static void printf_date_header(void)
-{
-    char datebuf[128];
-    printf("Date: %s\r\n", http_date(datebuf, sizeof (datebuf)));
 } // printf_date_header
 
 
@@ -562,7 +555,7 @@ static void failure_location(const char *httperr, const char *errmsg,
     printf("HTTP/1.1 %s\r\n", httperr);
     printf("Status: %s\r\n", httperr);
     printf("Server: %s\r\n", GSERVERSTRING);
-    printf_date_header();
+    printf_date_header(NULL);
     if (location != NULL)
         printf("Location: %s\r\n", location);
     printf("Connection: close\r\n");
@@ -595,7 +588,7 @@ static void debugInit()
     printf("HTTP/1.1 200 OK\r\n");
     printf("Status: 200 OK\r\n");
     printf("Content-type: text/plain; charset=utf-8\r\n");
-    printf_date_header();
+    printf_date_header(NULL);
     printf("Server: " GSERVERSTRING "\r\n");
     printf("Connection: close\r\n");
     printf("\r\n");
@@ -606,7 +599,7 @@ static void debugInit()
     debugEcho("%s", "");
     debugEcho("Offload Debug Run!");
     debugEcho("%s", "");
-    printf_date_header();
+    printf_date_header(getDebugFilePointer());
     debugEcho("Base server: %s", GBASESERVER);
     debugEcho("User wants to get: %s", Guri);
     debugEcho("Request from address: %s", getenv("REMOTE_ADDR"));
@@ -1032,7 +1025,7 @@ int main(int argc, char **argv)
 
     printf("HTTP/1.1 %s\r\n", responseCode);
     printf("Status: %s\r\n", responseCode);
-    printf_date_header();
+    printf_date_header(NULL);
     printf("Server: %s\r\n", GSERVERSTRING);
     printf("Connection: close\r\n");
     printf("ETag: %s\r\n", listFind(metadata, "ETag"));
