@@ -644,7 +644,7 @@ static void readHeaders(const int fd, list **headers)
             ;  // ignore these.
         else if (buf[br] == '\n')
         {
-            char *ptr;
+            char *ptr = NULL;
             if (br == 0)  // empty line, end of headers.
                 return;
             buf[br] = '\0';
