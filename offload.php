@@ -467,8 +467,15 @@ if (strcmp($Guri, "/robots.txt") == 0)
 if (sanestrpos($Guri, '?') >= 0)
     failure('403 Forbidden', "Offload server doesn't do dynamic content.");
 
-if ((strcasecmp($_SERVER['REQUEST_METHOD'], 'GET') != 0) &&
-    (strcasecmp($_SERVER['REQUEST_METHOD'], 'HEAD') != 0))
+$reqmethod = $_SERVER['REDIRECT_REQUEST_METHOD'];
+if (!isset($reqmethod)
+    $reqmethod = $_SERVER['REQUEST_METHOD'];
+if (!isset($reqmethod)
+    $reqmethod = 'GET';
+$ishead = (strcasecmp($reqmethod, 'HEAD') == 0);
+$isget = (strcasecmp($reqmethod, 'GET') == 0);
+
+if ((!ishead) && (!isget))
     failure('403 Forbidden', "Offload server doesn't do dynamic content.");
 
 $origurl = 'http://' . GBASESERVER . $Guri;
@@ -516,7 +523,6 @@ $io = NULL;  // read from this. May be file or HTTP connection.
 
 // HTTP HEAD requests for PHP scripts otherwise run fully and throw away the
 //  results: http://www.figby.com/archives/2004/06/01/2004-06-01-php/
-$ishead = (strcasecmp($_SERVER['REQUEST_METHOD'], 'HEAD') == 0);
 if ($ishead)
     debugEcho('This is a HEAD request to the offload server.');
 
