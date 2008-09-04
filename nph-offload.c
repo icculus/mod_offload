@@ -90,7 +90,7 @@
 #include <sys/mman.h>
 #include <netdb.h>
 
-#define GVERSION "1.1.0"
+#define GVERSION "1.1.1"
 #define GSERVERSTRING "nph-offload.c/" GVERSION
 
 #include "offload_server_config.h"
@@ -187,18 +187,16 @@ static void debugEcho(const char *fmt, ...)
 
 static void *createSemaphore(const int initialVal)
 {
-    char semname[64];
     void *retval = NULL;
     const int value = initialVal ? 0 : 1;
     int created = 1;
 
-    snprintf(semname, sizeof (semname), "MOD-OFFLOAD-%d", (int) getuid());
-    retval = sem_open(semname, O_CREAT | O_EXCL, 0600, value);
+    retval = sem_open("SEM-" SHM_NAME, O_CREAT | O_EXCL, 0600, value);
     if ((retval == (void *) SEM_FAILED) && (errno == EEXIST))
     {
         created = 0;
         debugEcho("(semaphore already exists, just opening existing one.)");
-        retval = sem_open(semname, 0);
+        retval = sem_open("SEM-" SHM_NAME, 0);
     } // if
 
     if (retval == (void *) SEM_FAILED)
@@ -300,7 +298,6 @@ static void setDownloadRecord()
     Sha1 sha1data;
     uint8 sha1[20];
     DownloadRecord *downloads = NULL;
-    const char *fname = "/mod-offload";
     const size_t maplen = sizeof (DownloadRecord) * MAX_DOWNLOAD_RECORDS;
     char *remoteAddr = getenv("REMOTE_ADDR");
     if (remoteAddr == NULL)
@@ -310,10 +307,10 @@ static void setDownloadRecord()
 
     getSemaphore();
 
-    fd = shm_open(fname, (O_CREAT|O_EXCL|O_RDWR), (S_IREAD|S_IWRITE));
+    fd = shm_open("/" SHM_NAME, (O_CREAT|O_EXCL|O_RDWR), (S_IREAD|S_IWRITE));
     if (fd < 0)
     {
-        fd = shm_open(fname, (O_CREAT|O_RDWR),(S_IREAD|S_IWRITE));
+        fd = shm_open("/" SHM_NAME, (O_CREAT|O_RDWR),(S_IREAD|S_IWRITE));
         if (fd < 0)
         {
             putSemaphore();

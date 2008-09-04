@@ -51,5 +51,14 @@
 #endif
 #endif
 
+// Pick a unique name, letters and dashes.
+//  This should be unique for each cache, or you may have odd problems. So
+//  if you have two separate offload servers with their own unique caches on
+//  the same machine, you want to keep them separated.
+// If you just want one offload server, the default is fine.
+#ifndef SHM_NAME
+#define SHM_NAME "mod-offload"
+#endif
+
 // end of offload_server_config.h ...
 
