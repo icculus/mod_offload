@@ -28,5 +28,28 @@
 #define GDEBUGTOFILE 1
 #endif
 
+// Set GMAXDUPEDOWNLOADS to the number of concurrent connections one IP
+//  address can have for one download. This is largely meant to prevent
+//  download accelerators that open multiple connections that each grab a
+//  portion of the same file. Any connections over the limit are immediately
+//  rejected with a 403 Forbidden response explaining the issue.
+// The same IP can download different files at the same time; we count the
+//  number of simultaneous accesses to the same URL from the same IP.
+// Two people on two machines behind a NAT, downloading the same file, will
+//  look like a dupe.
+// Set this to zero to disable it.
+#ifndef GMAXDUPEDOWNLOADS
+#define GMAXDUPEDOWNLOADS 1
+#endif
+
+// if you have a PowerPC, etc, flip this to 1.
+#ifndef PLATFORM_BIGENDIAN
+#if defined(__powerpc64__) || defined(__ppc__) || defined(__powerpc__) || defined(__POWERPC__)
+#define PLATFORM_BIGENDIAN 1
+#else
+#define PLATFORM_BIGENDIAN 0
+#endif
+#endif
+
 // end of offload_server_config.h ...
 

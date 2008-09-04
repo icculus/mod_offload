@@ -87,6 +87,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/socket.h>
+#include <sys/mman.h>
 #include <netdb.h>
 
 #define GVERSION "1.0.1"
@@ -115,7 +116,14 @@
 #define AI_V4MAPPED 0
 #endif
 
+typedef int8_t int8;
+typedef uint8_t uint8;
+typedef int16_t int16;
+typedef uint16_t uint16;
+typedef int32_t int32;
+typedef uint32_t uint32;
 typedef int64_t int64;
+typedef uint64_t uint64;
 
 static int GIsCacheProcess = 0;
 static char *Guri = NULL;
@@ -174,6 +182,219 @@ static void debugEcho(const char *fmt, ...)
         } // else
     #endif
 } // debugEcho
+#endif
+
+
+static void *createSemaphore(const int initialVal)
+{
+    char semname[64];
+    void *retval = NULL;
+    const int value = initialVal ? 0 : 1;
+    int created = 1;
+
+    snprintf(semname, sizeof (semname), "MOD-OFFLOAD-%d", (int) getuid());
+    retval = sem_open(semname, O_CREAT | O_EXCL, 0600, value);
+    if ((retval == (void *) SEM_FAILED) && (errno == EEXIST))
+    {
+        created = 0;
+        debugEcho("(semaphore already exists, just opening existing one.)");
+        retval = sem_open(semname, 0);
+    } // if
+
+    if (retval == (void *) SEM_FAILED)
+        return NULL;
+
+    return retval;
+} // createSemaphore
+
+
+static void getSemaphore(void)
+{
+    debugEcho("grabbing semaphore...(owned %d time(s).)", GSemaphoreOwned);
+    if (GSemaphoreOwned++ > 0)
+        return;
+
+    if (GSemaphore != NULL)
+    {
+        if (sem_wait(GSemaphore) == -1)
+            failure("503 Service Unavailable", "Couldn't lock semaphore.");
+    } // if
+    else
+    {
+        debugEcho("(have to create semaphore...)");
+        GSemaphore = createSemaphore(0);
+        if (GSemaphore == NULL)
+            failure("503 Service Unavailable", "Couldn't allocate semaphore.");
+    } // else
+} // getSemaphore
+
+
+static void putSemaphore(void)
+{
+    if (GSemaphoreOwned == 0)
+        return;
+
+    if (--GSemaphoreOwned == 0)
+    {
+        if (GSemaphore != NULL)
+        {
+            if (sem_post(GSemaphore) == -1)
+                failure("503 Service Unavailable", "Couldn't unlock semaphore.");
+        } // if
+    } // if
+    debugEcho("released semaphore...(now owned %d time(s).)", GSemaphoreOwned);
+} // putSemaphore
+
+
+static inline int process_dead(const pid_t pid)
+{
+    return ( (pid <= 0) || ((kill(pid, 0) == -1) && (errno == ESRCH)) );
+} // process_dead
+
+
+#if GMAXDUPEDOWNLOADS <= 0
+#define setDownloadRecord()
+#define removeDownloadRecord()
+#else
+
+// we can track this many concurrent connections in a block of shared memory.
+//  If DownloadRecord is 24 bytes, then 512 records is 12 kilobytes (usually,
+//  three pages of memory). If you actually have more than this many concurrent
+//  connections then we'll just stop checking for dupes in things that didn't
+//  fit in the table...frankly, if your server is still standing with 512
+//  active HTTP downloads, you probably don't care about download accelerators
+//  anyhow.   :)
+#define MAX_DOWNLOAD_RECORDS 512
+
+typedef struct
+{
+    pid_t pid;
+    uint8 sha1[20];
+} DownloadRecord;
+
+static DownloadRecord *GAllDownloads = NULL;
+static DownloadRecord *GMyDownload = NULL;
+
+#define DUPE_FORBID_TEXT \
+    "403 Forbidden\n\n" \
+    "We're limiting the number of connections you can make.\n" \
+    "Please disable any 'download accelerators' and try again later.\n\n" \
+
+typedef struct
+{
+    uint32 state[5];
+    uint32 count[2];
+    uint8 buffer[64];
+} Sha1;
+
+static void Sha1_init(Sha1 *context);
+static void Sha1_append(Sha1 *context, const uint8 *data, uint32 len);
+static void Sha1_finish(Sha1 *context, uint8 digest[20]);
+
+static void setDownloadRecord()
+{
+    const pid_t mypid = getpid();
+    int dupes = 0;
+    int i = 0;
+    int fd = -1;
+    Sha1 sha1data;
+    uint8 sha1[20];
+    DownloadRecord *downloads = NULL;
+    const char *fname = "/mod-offload";
+    const size_t maplen = sizeof (DownloadRecord) * MAX_DOWNLOAD_RECORDS;
+    char *remoteAddr = getenv("REMOTE_ADDR");
+    if (remoteAddr == NULL)
+        return;  // oh well.
+
+    GAllDownloads = GMyDownload = NULL;
+
+    getSemaphore();
+
+    fd = shm_open(fname, (O_CREAT|O_EXCL|O_RDWR), (S_IREAD|S_IWRITE));
+    if (fd < 0)
+    {
+        fd = shm_open(fname, (O_CREAT|O_RDWR),(S_IREAD|S_IWRITE));
+        if (fd < 0)
+        {
+            putSemaphore();
+            debugEcho("shm_open() failed: %s", strerror(errno));
+            return;  // oh well.
+        } // if
+    } // if
+
+    ftruncate(fd, maplen);
+
+    void *ptr = mmap(0, maplen, (PROT_READ|PROT_WRITE), MAP_SHARED, fd, 0);
+    close(fd);  // mapping remains.
+    if (ptr == MAP_FAILED)
+    {
+        putSemaphore();
+        debugEcho("mmap() failed: %s", strerror(errno));
+        return;
+    } // if
+
+    GAllDownloads = downloads = (DownloadRecord *) ptr;
+
+    Sha1_init(&sha1data);
+    Sha1_append(&sha1data, (const uint8 *) remoteAddr, strlen(remoteAddr) + 1);
+    Sha1_append(&sha1data, (const uint8 *) Guri, strlen(Guri) + 1);
+    Sha1_finish(&sha1data, sha1);
+
+    for (i = 0; i < MAX_DOWNLOAD_RECORDS; i++, downloads++)
+    {
+        const pid_t pid = downloads->pid;
+
+        if (pid <= 0)  // unused slot.
+            GMyDownload = downloads;  // take slot.
+
+        else if (memcmp(downloads->sha1, sha1, sizeof (sha1)) == 0)
+        {
+            // make sure this isn't a killed process.
+            if ( (pid == mypid) || (process_dead(pid)) )
+            {
+                debugEcho("pid #%d died at some point.", (int) pid);
+                downloads->pid = 0;
+                GMyDownload = downloads;   // take slot.
+            } // if
+            else
+            {
+                debugEcho("pid #%d still alive, dupe slot.", (int) pid);
+                dupes++;
+            } // else
+        } // else if
+    } // for
+
+    debugEcho("Saw %d dupes.", dupes);
+
+    if (dupes >= GMAXDUPEDOWNLOADS)
+        failure("403 Forbidden", DUPE_FORBID_TEXT);  // will put semaphore.
+    else if (GMyDownload == NULL)    // Have fun, downloader accelerator!
+        debugEcho("no free download slots! Can't add ourselves.");
+    else
+    {
+        debugEcho("Got download slot #%d", (int) (GMyDownload-GAllDownloads));
+        GMyDownload->pid = mypid;
+        memcpy(GMyDownload->sha1, sha1, sizeof (sha1));
+    } // else
+
+    putSemaphore();
+} // setDownloadRecord
+
+
+static void removeDownloadRecord()
+{
+    if (!GAllDownloads)
+        return;
+
+    getSemaphore();
+    if (GMyDownload != NULL)
+        GMyDownload->pid = 0;
+    putSemaphore();
+    munmap(GAllDownloads, sizeof (DownloadRecord) * MAX_DOWNLOAD_RECORDS);
+
+    GAllDownloads = GMyDownload = NULL;
+} // removeDownloadRecord
+
 #endif
 
 
@@ -345,72 +566,12 @@ static void listFree(list **l)
 } // listFree
 
 
-static void *createSemaphore(const int initialVal)
-{
-    char semname[64];
-    void *retval = NULL;
-    const int value = initialVal ? 0 : 1;
-    int created = 1;
-
-    snprintf(semname, sizeof (semname), "MOD-OFFLOAD-%d", (int) getuid());
-    retval = sem_open(semname, O_CREAT | O_EXCL, 0600, value);
-    if ((retval == (void *) SEM_FAILED) && (errno == EEXIST))
-    {
-        created = 0;
-        debugEcho("(semaphore already exists, just opening existing one.)");
-        retval = sem_open(semname, 0);
-    } // if
-
-    if (retval == (void *) SEM_FAILED)
-        return NULL;
-
-    return retval;
-} // createSemaphore
-
-
-static void getSemaphore(void)
-{
-    debugEcho("grabbing semaphore...(owned %d time(s).)", GSemaphoreOwned);
-    if (GSemaphoreOwned++ > 0)
-        return;
-
-    if (GSemaphore != NULL)
-    {
-        if (sem_wait(GSemaphore) == -1)
-            failure("503 Service Unavailable", "Couldn't lock semaphore.");
-    } // if
-    else
-    {
-        debugEcho("(have to create semaphore...)");
-        GSemaphore = createSemaphore(0);
-        if (GSemaphore == NULL)
-            failure("503 Service Unavailable", "Couldn't allocate semaphore.");
-    } // else
-} // getSemaphore
-
-
-static void putSemaphore(void)
-{
-    if (GSemaphoreOwned == 0)
-        return;
-
-    if (--GSemaphoreOwned == 0)
-    {
-        if (GSemaphore != NULL)
-        {
-            if (sem_post(GSemaphore) == -1)
-                failure("503 Service Unavailable", "Couldn't unlock semaphore.");
-        } // if
-    } // if
-    debugEcho("released semaphore...(now owned %d time(s).)", GSemaphoreOwned);
-} // putSemaphore
-
-
 static void terminate(void)
 {
     if (!GIsCacheProcess)
     {
         debugEcho("offload program is terminating...");
+        removeDownloadRecord();
         while (GSemaphoreOwned > 0)
             putSemaphore();
     } // if
@@ -471,12 +632,6 @@ static list *loadMetadata(const char *fname)
 
     return retval;
 } // loadMetadata
-
-
-static int process_dead(int pid)
-{
-    return ( (pid <= 0) || ((kill(pid, 0) == -1) && (errno == ESRCH)) );
-} // process_dead
 
 
 static int cachedMetadataMostRecent(const list *metadata, const list *head)
@@ -945,6 +1100,9 @@ static int cacheFork(const int sock, FILE *cacheio, const int64 max)
     // we're the child.
     GIsCacheProcess = 1;
     debugEcho("caching process (%d) starting up!", (int) getpid());
+    if (GAllDownloads != NULL)
+        munmap(GAllDownloads, sizeof (DownloadRecord) * MAX_DOWNLOAD_RECORDS);
+    GAllDownloads = GMyDownload = NULL;
     fclose(stdin);
     fclose(stdout);
     fclose(stderr);
@@ -1017,6 +1175,9 @@ int main(int argc, char **argv, char **envp)
     const int ishead = (strcasecmp(reqmethod, "HEAD") == 0);
     if ( (strchr(Guri, '?') != NULL) || ((!isget) && (!ishead)) )
         failure("403 Forbidden", "Offload server doesn't do dynamic content.");
+
+    if (!ishead)
+        setDownloadRecord();
 
     list *head = NULL;
     http_head(&head);
@@ -1308,4 +1469,154 @@ int main(int argc, char **argv, char **envp)
 } // main
 
 // end of nph-offload.c ...
+
+
+
+#if GMAXDUPEDOWNLOADS > 0
+
+// SHA-1 code originally from ftp://ftp.funet.fi/pub/crypt/hash/sha/sha1.c
+//  License: public domain.
+//  I cleaned it up a little for my specific purposes. --ryan.
+
+/*
+SHA-1 in C
+By Steve Reid <steve@edmweb.com>
+100% Public Domain
+*/
+
+#define rol(value, bits) (((value) << (bits)) | ((value) >> (32 - (bits))))
+
+/* blk0() and blk() perform the initial expand. */
+/* I got the idea of expanding during the round function from SSLeay */
+#if !PLATFORM_BIGENDIAN
+#define blk0(i) (block->l[i] = (rol(block->l[i],24)&0xFF00FF00) \
+    |(rol(block->l[i],8)&0x00FF00FF))
+#else
+#define blk0(i) block->l[i]
+#endif
+#define blk(i) (block->l[i&15] = rol(block->l[(i+13)&15]^block->l[(i+8)&15] \
+    ^block->l[(i+2)&15]^block->l[i&15],1))
+
+/* (R0+R1), R2, R3, R4 are the different operations used in SHA1 */
+#define R0(v,w,x,y,z,i) z+=((w&(x^y))^y)+blk0(i)+0x5A827999+rol(v,5);w=rol(w,30);
+#define R1(v,w,x,y,z,i) z+=((w&(x^y))^y)+blk(i)+0x5A827999+rol(v,5);w=rol(w,30);
+#define R2(v,w,x,y,z,i) z+=(w^x^y)+blk(i)+0x6ED9EBA1+rol(v,5);w=rol(w,30);
+#define R3(v,w,x,y,z,i) z+=(((w|x)&y)|(w&x))+blk(i)+0x8F1BBCDC+rol(v,5);w=rol(w,30);
+#define R4(v,w,x,y,z,i) z+=(w^x^y)+blk(i)+0xCA62C1D6+rol(v,5);w=rol(w,30);
+
+
+/* Hash a single 512-bit block. This is the core of the algorithm. */
+
+static void Sha1_transform(uint32 state[5], const uint8 buffer[64])
+{
+    uint32 a, b, c, d, e;
+    typedef union {
+        uint8 c[64];
+        uint32 l[16];
+    } CHAR64LONG16;
+    CHAR64LONG16* block;
+    static uint8 workspace[64];
+    block = (CHAR64LONG16*)workspace;
+    memcpy(block, buffer, 64);
+    /* Copy context->state[] to working vars */
+    a = state[0];
+    b = state[1];
+    c = state[2];
+    d = state[3];
+    e = state[4];
+    /* 4 rounds of 20 operations each. Loop unrolled. */
+    R0(a,b,c,d,e, 0); R0(e,a,b,c,d, 1); R0(d,e,a,b,c, 2); R0(c,d,e,a,b, 3);
+    R0(b,c,d,e,a, 4); R0(a,b,c,d,e, 5); R0(e,a,b,c,d, 6); R0(d,e,a,b,c, 7);
+    R0(c,d,e,a,b, 8); R0(b,c,d,e,a, 9); R0(a,b,c,d,e,10); R0(e,a,b,c,d,11);
+    R0(d,e,a,b,c,12); R0(c,d,e,a,b,13); R0(b,c,d,e,a,14); R0(a,b,c,d,e,15);
+    R1(e,a,b,c,d,16); R1(d,e,a,b,c,17); R1(c,d,e,a,b,18); R1(b,c,d,e,a,19);
+    R2(a,b,c,d,e,20); R2(e,a,b,c,d,21); R2(d,e,a,b,c,22); R2(c,d,e,a,b,23);
+    R2(b,c,d,e,a,24); R2(a,b,c,d,e,25); R2(e,a,b,c,d,26); R2(d,e,a,b,c,27);
+    R2(c,d,e,a,b,28); R2(b,c,d,e,a,29); R2(a,b,c,d,e,30); R2(e,a,b,c,d,31);
+    R2(d,e,a,b,c,32); R2(c,d,e,a,b,33); R2(b,c,d,e,a,34); R2(a,b,c,d,e,35);
+    R2(e,a,b,c,d,36); R2(d,e,a,b,c,37); R2(c,d,e,a,b,38); R2(b,c,d,e,a,39);
+    R3(a,b,c,d,e,40); R3(e,a,b,c,d,41); R3(d,e,a,b,c,42); R3(c,d,e,a,b,43);
+    R3(b,c,d,e,a,44); R3(a,b,c,d,e,45); R3(e,a,b,c,d,46); R3(d,e,a,b,c,47);
+    R3(c,d,e,a,b,48); R3(b,c,d,e,a,49); R3(a,b,c,d,e,50); R3(e,a,b,c,d,51);
+    R3(d,e,a,b,c,52); R3(c,d,e,a,b,53); R3(b,c,d,e,a,54); R3(a,b,c,d,e,55);
+    R3(e,a,b,c,d,56); R3(d,e,a,b,c,57); R3(c,d,e,a,b,58); R3(b,c,d,e,a,59);
+    R4(a,b,c,d,e,60); R4(e,a,b,c,d,61); R4(d,e,a,b,c,62); R4(c,d,e,a,b,63);
+    R4(b,c,d,e,a,64); R4(a,b,c,d,e,65); R4(e,a,b,c,d,66); R4(d,e,a,b,c,67);
+    R4(c,d,e,a,b,68); R4(b,c,d,e,a,69); R4(a,b,c,d,e,70); R4(e,a,b,c,d,71);
+    R4(d,e,a,b,c,72); R4(c,d,e,a,b,73); R4(b,c,d,e,a,74); R4(a,b,c,d,e,75);
+    R4(e,a,b,c,d,76); R4(d,e,a,b,c,77); R4(c,d,e,a,b,78); R4(b,c,d,e,a,79);
+    /* Add the working vars back into context.state[] */
+    state[0] += a;
+    state[1] += b;
+    state[2] += c;
+    state[3] += d;
+    state[4] += e;
+    /* Wipe variables */
+    a = b = c = d = e = 0;
+}
+
+static void Sha1_init(Sha1 *context)
+{
+    /* SHA1 initialization constants */
+    context->state[0] = 0x67452301;
+    context->state[1] = 0xEFCDAB89;
+    context->state[2] = 0x98BADCFE;
+    context->state[3] = 0x10325476;
+    context->state[4] = 0xC3D2E1F0;
+    context->count[0] = context->count[1] = 0;
+}
+
+
+/* Run your data through this. */
+
+static void Sha1_append(Sha1 *context, const uint8 *data, uint32 len)
+{
+    uint32 i, j;
+
+    j = (context->count[0] >> 3) & 63;
+    if ((context->count[0] += len << 3) < (len << 3)) context->count[1]++;
+    context->count[1] += (len >> 29);
+    if ((j + len) > 63) {
+        memcpy(&context->buffer[j], data, (i = 64-j));
+        Sha1_transform(context->state, context->buffer);
+        for ( ; i + 63 < len; i += 64) {
+            Sha1_transform(context->state, &data[i]);
+        }
+        j = 0;
+    }
+    else i = 0;
+    memcpy(&context->buffer[j], &data[i], len - i);
+}
+
+
+/* Add padding and return the message digest. */
+
+static void Sha1_finish(Sha1 *context, uint8 digest[20])
+{
+    uint32 i, j;
+    uint8 finalcount[8];
+
+    for (i = 0; i < 8; i++) {
+        finalcount[i] = (uint8)((context->count[(i >= 4 ? 0 : 1)]
+         >> ((3-(i & 3)) * 8) ) & 255);  /* Endian independent */
+    }
+    Sha1_append(context, (uint8 *)"\200", 1);
+    while ((context->count[0] & 504) != 448) {
+        Sha1_append(context, (uint8 *)"\0", 1);
+    }
+    Sha1_append(context, finalcount, 8);  /* Should cause a Sha1_transform() */
+    for (i = 0; i < 20; i++) {
+        digest[i] = (uint8)
+         ((context->state[i>>2] >> ((3-(i & 3)) * 8) ) & 255);
+    }
+    /* Wipe variables */
+    i = j = 0;
+    memset(context->buffer, 0, 64);
+    memset(context->state, 0, 20);
+    memset(context->count, 0, 8);
+    memset(&finalcount, 0, 8);
+    Sha1_transform(context->state, context->buffer);
+}
+
+#endif
 
