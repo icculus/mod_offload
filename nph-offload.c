@@ -276,9 +276,9 @@ static DownloadRecord *GAllDownloads = NULL;
 static DownloadRecord *GMyDownload = NULL;
 
 #define DUPE_FORBID_TEXT \
-    "403 Forbidden\n\n" \
-    "We're limiting the number of connections you can make.\n" \
-    "Please disable any 'download accelerators' and try again later.\n\n" \
+    "403 Forbidden - " GSERVERSTRING "\n\n" \
+    "Your network address has too many connections for this specific file.\n" \
+    "Please disable any 'download accelerators' and try again.\n\n" \
 
 typedef struct
 {
