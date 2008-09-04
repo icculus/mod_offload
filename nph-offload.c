@@ -29,10 +29,6 @@
 
 
 // !!! FIXME:  issues to work out.
-//   - Could have a partial file cached if server crashes or power goes out.
-//     Add a "cacher's process id" to the metadata, and have those feeding
-//     from the cache decide if this process died...if so, wipe the entry and
-//     recache it.
 //   - Need to have a way to clean out old files. If x.zip is on the base,
 //     gets cached, and then is deleted, it'll stay on the offload server
 //     forever. Getting a 404 from the HEAD request will clean it out, but
