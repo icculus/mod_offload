@@ -90,7 +90,7 @@
 #include <sys/mman.h>
 #include <netdb.h>
 
-#define GVERSION "1.0.1"
+#define GVERSION "1.1.0"
 #define GSERVERSTRING "nph-offload.c/" GVERSION
 
 #include "offload_server_config.h"
