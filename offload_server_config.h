@@ -9,7 +9,7 @@
 
 // This is a list of servers that you are offloading.
 #ifndef GBASESERVER
-#define GBASESERVER "icculus.org"
+#define GBASESERVER "example.com"
 #endif
 
 // Time in seconds that i/o to base server should timeout in lieu of activity.
