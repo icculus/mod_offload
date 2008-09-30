@@ -13,6 +13,43 @@
 #define GDEBUGTOFILE 1
 #endif
 
+// Set this to non-zero to provide a listen server that serves HTTP requests
+//  directly. Set this to zero and you need to run as a cgi-bin program
+//  through another webserver. Obviously, you can't listen on port 80 if
+//  something else is using it.
+#ifndef GLISTENPORT
+#define GLISTENPORT 0
+#endif
+
+// Ignore this if GLISTENPORT == 0. This is the address to bind to. It should
+//  be a string literal ("39.15.124.111" or maybe "localhost" if another
+//  process is proxying). NULL is equivalent to IN_ADDRANY; bind to everything.
+#ifndef GLISTENADDR
+#define GLISTENADDR NULL
+#endif
+
+// Ignore this if GLISTENPORT == 0. Should probably be PF_INET or PF_INET6.
+#ifndef GLISTENFAMILY
+#define GLISTENFAMILY PF_INET
+#endif
+
+// Ignore this if GLISTENPORT == 0.
+// Set this to a list of IP addresses from which you trust the X-Forwarded-For
+//  header. This has to match this format:
+//     "xxx.xxx.xxx.xxx", "yyy.yyy.yyy.yyy", [...more like that...]
+// ...an array of C string literals.
+// If you don't plan to serve from behind a known proxy on your LAN, you
+//  can just set this to NULL.
+#ifndef GLISTENTRUSTFWD
+#define GLISTENTRUSTFWD "127.0.0.1", "0.0.0.0"
+#endif
+
+// Ignore this if GLISTENPORT == 0.
+// Set this to non-zero to make process fork to background on startup.
+#ifndef GLISTENDAEMONIZE
+#define GLISTENDAEMONIZE 0
+#endif
+
 // This is a list of servers that you are offloading.
 #ifndef GBASESERVER
 #define GBASESERVER "example.com"

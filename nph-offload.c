@@ -89,8 +89,10 @@
 #include <sys/socket.h>
 #include <sys/mman.h>
 #include <netdb.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
-#define GVERSION "1.1.1"
+#define GVERSION "1.1.2"
 #define GSERVERSTRING "nph-offload.c/" GVERSION
 
 #include "offload_server_config.h"
@@ -112,7 +114,7 @@
 
 // some getaddrinfo() flags that may not exist...
 #ifndef AI_ALL
-#define AI_ALL AF_UNSPEC
+#define AI_ALL 0
 #endif
 #ifndef AI_ADDRCONFIG
 #define AI_ADDRCONFIG 0
@@ -132,6 +134,8 @@ typedef int32_t int32;
 typedef uint32_t uint32;
 typedef int64_t int64;
 typedef uint64_t uint64;
+
+extern char **environ;
 
 static int GIsCacheProcess = 0;
 static char *Guri = NULL;
@@ -919,9 +923,9 @@ static int doHttp(const char *method, list **headers)
     int rc = -1;
     struct addrinfo hints;
     memset(&hints, '\0', sizeof (hints));
-    hints.ai_family = AI_ALL;
+    hints.ai_family = PF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = AI_NUMERICSERV | AI_V4MAPPED | AI_ADDRCONFIG;
+    hints.ai_flags = AI_NUMERICSERV | AI_V4MAPPED | AI_ALL | AI_ADDRCONFIG;
 
     struct addrinfo *dns = NULL;
     if ((rc = getaddrinfo(GBASESERVER, GBASESERVERPORTSTR, &hints, &dns)) != 0)
@@ -1110,9 +1114,7 @@ static pid_t cacheFork(const int sock, FILE *cacheio, const int64 max)
     fclose(stdin);
     fclose(stdout);
     fclose(stderr);
-    stdin = NULL;
-    stderr = NULL;
-    stdout = NULL;
+    stdin = stderr = stdout = NULL;
     chdir("/");
     setsid();
 
@@ -1157,7 +1159,7 @@ static pid_t cacheFork(const int sock, FILE *cacheio, const int64 max)
 } // cacheFork
 
 
-int main(int argc, char **argv, char **envp)
+static int serverMainline(int argc, char **argv, char **envp)
 {
     Guri = getenv("REQUEST_URI");
 
@@ -1469,7 +1471,280 @@ int main(int argc, char **argv, char **envp)
 
     terminate();  // done!
     return 0;
+} // serverMainline
+
+
+#if GLISTENPORT
+#define GLISTENPORTSTR OFFLOAD_NUMSTR(GLISTENPORT)
+static const char *readClientHeaders(const int fd, const struct sockaddr *addr)
+{
+    int sawip = 0;
+    const time_t endtime = time(NULL) + GTIMEOUT;
+    int br = 0;
+    char buf[1024];
+    int seenresponse = 0;
+    while (1)
+    {
+        const time_t now = time(NULL);
+        int rc = -1;
+        fd_set rfds;
+
+        if (endtime >= now)
+        {
+            struct timeval tv;
+            FD_ZERO(&rfds);
+            FD_SET(fd, &rfds);
+            tv.tv_sec = endtime - now;
+            tv.tv_usec = 0;
+            rc = select(fd+1, &rfds, NULL, NULL, &tv);
+        } // if
+
+        if ((rc <= 0) || (FD_ISSET(fd, &rfds) == 0))
+            return "Timeout while talking to client.";
+
+        // we can only read one byte at a time, since we don't want to
+        //  read past end of headers, into actual content, here.
+        if (read(fd, buf + br, 1) != 1)
+            return "Read error while talking to client.";
+
+        if (buf[br] == '\r')
+            ;  // ignore these.
+        else if (buf[br] == '\n')
+        {
+            char *ptr = NULL;
+            if (br == 0)  // empty line, end of headers.
+                break;
+
+            buf[br] = '\0';
+            if (seenresponse)
+            {
+                ptr = strchr(buf, ':');
+                if (ptr != NULL)
+                {
+                    *(ptr++) = '\0';
+                    while (*ptr == ' ')
+                        ptr++;
+
+                    if (strcasecmp(buf, "X-Forwarded-For") == 0)
+                    {
+                        static const char *trust[] = { GLISTENTRUSTFWD };
+                        const int total = sizeof (trust) / sizeof (trust[0]);
+                        int i;
+                        for (i = 0; i < total; i++)
+                        {
+                            if ((trust[i]) && (strcmp(trust[i], ptr) == 0))
+                                break;
+                        } // for
+                        sawip = ((!sawip) && (i < total));
+                        if (!sawip)
+                            setenv("REMOTE_ADDR", ptr, 1);
+                    } // if
+
+                    else if (strcasecmp(buf, "User-Agent") == 0)
+                        setenv("HTTP_USER_AGENT", ptr, 1);
+
+                    else if (strcasecmp(buf, "Range") == 0)
+                        setenv("HTTP_RANGE", ptr, 1);
+
+                    else if (strcasecmp(buf, "If-Range") == 0)
+                        setenv("HTTP_IF_RANGE", ptr, 1);
+
+                    else if (strcasecmp(buf, "Referer") == 0)
+                        setenv("HTTP_REFERER", ptr, 1);
+
+                    // we currently don't care about anything else.
+                } // if
+            } // if
+
+            else
+            {
+                ptr = strchr(buf, ' ');
+                if (ptr != NULL)
+                {
+                    *(ptr++) = '\0';
+                    while (*ptr == ' ')
+                        ptr++;
+                    setenv("REQUEST_METHOD", buf, 1);
+                    const char *start = ptr;
+                    ptr = strchr(ptr, ' ');
+                    if (ptr != NULL)
+                    {
+                        *(ptr++) = '\0';
+                        while (*ptr == ' ')
+                            ptr++;
+                        setenv("REQUEST_URI", start, 1);
+                        if (strncasecmp(ptr, "HTTP/", 5) != 0)
+                            ptr = NULL;  // fail below.
+                    } // if
+                } // if
+                seenresponse = 1;
+            } // else
+
+            if (ptr == NULL)
+                return "Bogus request from client.";
+
+            br = 0;
+        } // if
+        else
+        {
+            br++;
+            if (br >= sizeof (buf))
+                return "Buffer overflow.";
+        } // else
+    } // while
+
+    if (!sawip)
+    {
+        void *ptr = NULL;
+        // !!! FIXME: do this without network-specifics?
+        if (addr->sa_family == AF_INET)
+            ptr = &((struct sockaddr_in *) addr)->sin_addr;
+        else if (addr->sa_family == AF_INET6)
+            ptr = &((struct sockaddr_in6 *) addr)->sin6_addr;
+
+        if ((ptr) && (inet_ntop(addr->sa_family, ptr, buf, sizeof (buf))))
+            setenv("REMOTE_ADDR", buf, 1);
+    } // if
+
+    return NULL;
+} // readClientHeaders
+
+
+static inline int daemonChild(const int fd, const struct sockaddr *addr)
+{
+    setsid();
+    if (fd == 0)
+        dup2(fd, 1);
+    else if (fd == 1)
+        dup2(fd, 0);
+    else
+    {
+        dup2(fd, 0);
+        dup2(fd, 1);
+        close(fd);
+    } // else
+
+    stdin = fdopen(0, "rb");
+    stdout = fdopen(1, "wb");
+    stderr = fopen("/dev/null", "wb");
+
+    if ((stdin) && (stdout) && (stderr))
+    {
+        if (readClientHeaders(0, addr) == NULL)  // NULL == no error.
+            serverMainline(0, NULL, environ);
+    } // if
+
+    if (stdin) fclose(stdin);
+    if (stdout) fclose(stdout);
+    if (stderr) fclose(stderr);
+    stdin = stdout = stderr = NULL;
+
+    // !!! FIXME: write an access_log or error_log.
+    exit(0);
+} // daemonChild
+
+
+static inline int daemonMainline(int argc, char **argv, char **envp)
+{
+    // !!! FIXME: move to own function.
+    #if GLISTENDAEMONIZE
+    {
+        const pid_t backpid = fork();
+        if (backpid > 0)  // parent.
+            return 0;  // done.
+
+        else if (backpid == -1)
+        {
+            fprintf(stderr, "Failed to fork(): %s\n", strerror(errno));
+            return 5;
+        } // if
+
+        // we're the child. Welcome to the background.
+        fclose(stdin);
+        fclose(stdout);
+        fclose(stderr);
+        stdin = stderr = stdout = NULL;
+        chdir("/");
+        setsid();
+    }
+    #endif
+
+    signal(SIGCHLD, SIG_IGN);
+
+    // !!! FIXME: move to own function.
+    struct addrinfo hints;
+    memset(&hints, '\0', sizeof (hints));
+    hints.ai_family = GLISTENFAMILY;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_NUMERICSERV | AI_V4MAPPED | AI_ALL | AI_ADDRCONFIG;
+
+    int rc = -1;
+    struct addrinfo *dns = NULL;
+    if ((rc = getaddrinfo(GLISTENADDR, GLISTENPORTSTR, &hints, &dns)) != 0)
+    {
+        if (stderr != NULL)
+            fprintf(stderr, "getaddrinfo failure: %s\n", gai_strerror(rc));
+        return 1;
+    } // if
+
+    int fd = -1;
+    struct addrinfo *addr;
+    for (addr = dns; addr != NULL; addr = addr->ai_next)
+    {
+        fd = socket(addr->ai_family, addr->ai_socktype, addr->ai_protocol);
+        if (fd != -1)
+        {
+            if (bind(fd, addr->ai_addr, addr->ai_addrlen) == 0)
+            {
+                if (listen(fd, 16) == 0)
+                    break;
+            } // if
+
+            close(fd);
+            fd = -1;
+        } // if
+    } // for
+    freeaddrinfo(dns);
+
+    if (fd == -1)
+    {
+        if (stderr != NULL)
+            fprintf(stderr, "Failed to bind socket.\n");
+        return 2;
+    } // if
+
+    while (1)  // loop forever.
+    {
+        struct sockaddr addr;
+        socklen_t addrlen = sizeof (addr);
+        const int newfd = accept(fd, &addr, &addrlen);
+        if (newfd != -1)
+        {
+            const pid_t pid = fork();
+            if (pid != 0)  // we're NOT the child.
+                close(newfd);
+            else
+            {
+                close(fd);
+                return daemonChild(newfd, &addr);
+            } // else
+        } // if
+    } // while
+
+    return 0;
+} // daemonMainline
+#endif
+
+
+int main(int argc, char **argv, char **envp)
+{
+    #if !GLISTENPORT
+    return serverMainline(argc, argv, envp);
+    #else
+    return daemonMainline(argc, argv, envp);
+    #endif
 } // main
+
 
 // end of nph-offload.c ...
 
