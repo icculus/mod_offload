@@ -15,7 +15,7 @@
 // Time in seconds that i/o (to base server or client) should timeout in
 //  lieu of activity.
 #ifndef GTIMEOUT
-#define GTIMEOUT 90
+#define GTIMEOUT 45
 #endif
 
 // This is where we'll cache files.
