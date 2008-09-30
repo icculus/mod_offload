@@ -12,7 +12,8 @@
 #define GBASESERVER "example.com"
 #endif
 
-// Time in seconds that i/o to base server should timeout in lieu of activity.
+// Time in seconds that i/o (to base server or client) should timeout in
+//  lieu of activity.
 #ifndef GTIMEOUT
 #define GTIMEOUT 90
 #endif
