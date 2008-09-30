@@ -929,9 +929,6 @@ static int doHttp(const char *method, list **headers)
     struct addrinfo *addr;
     for (addr = dns; addr != NULL; addr = addr->ai_next)
     {
-        if (addr->ai_socktype != SOCK_STREAM)
-            continue;
-
         fd = socket(addr->ai_family, addr->ai_socktype, addr->ai_protocol);
         if (connect(fd, addr->ai_addr, addr->ai_addrlen) == 0)
             break;
