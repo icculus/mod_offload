@@ -919,7 +919,7 @@ static int doHttp(const char *method, list **headers)
     hints.ai_flags = AI_NUMERICSERV | AI_V4MAPPED | AI_ADDRCONFIG;
 
     struct addrinfo *dns = NULL;
-    if ((rc = getaddrinfo(GBASESERVER, "80", &hints, &dns)) != 0)
+    if ((rc = getaddrinfo(GBASESERVER, GBASESERVERPORT, &hints, &dns)) != 0)
     {
         debugEcho("getaddrinfo failure: %s", gai_strerror(rc));
         failure("503 Service Unavailable", "Offload base server hostname lookup failure.");

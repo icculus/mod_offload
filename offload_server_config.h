@@ -18,6 +18,12 @@
 #define GBASESERVER "example.com"
 #endif
 
+// This is the port on the base server to connect to (default for HTTP is 80).
+//  This is a literal string, not a number! Put it in quotes.
+#ifndef GBASESERVERPORT
+#define GBASESERVERPORT "80"
+#endif
+
 // Time in seconds that i/o (to base server or client) should timeout in
 //  lieu of activity.
 #ifndef GTIMEOUT
