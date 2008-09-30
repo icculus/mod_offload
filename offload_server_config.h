@@ -7,6 +7,12 @@
 #define GDEBUG 0
 #endif
 
+// Set GDEBUGTOFILE to write all debug info to files in GOFFLOADDIR, if
+//  GDEBUG is also true. You probably want this to be true most cases.
+#ifndef GDEBUGTOFILE
+#define GDEBUGTOFILE 1
+#endif
+
 // This is a list of servers that you are offloading.
 #ifndef GBASESERVER
 #define GBASESERVER "example.com"
@@ -21,12 +27,6 @@
 // This is where we'll cache files.
 #ifndef GOFFLOADDIR
 #define GOFFLOADDIR "/usr/local/apache/offload"
-#endif
-
-// Set GDEBUGTOFILE to write all debug info to files in GOFFLOADDIR, if
-//  GDEBUG is also true. You probably want this to be true most cases.
-#ifndef GDEBUGTOFILE
-#define GDEBUGTOFILE 1
 #endif
 
 // Set GMAXDUPEDOWNLOADS to the number of concurrent connections one IP
