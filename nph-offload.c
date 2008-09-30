@@ -106,6 +106,9 @@
 #endif
 
 // some getaddrinfo() flags that may not exist...
+#ifndef AI_ALL
+#define AI_ALL AF_UNSPEC
+#endif
 #ifndef AI_ADDRCONFIG
 #define AI_ADDRCONFIG 0
 #endif
@@ -911,7 +914,7 @@ static int doHttp(const char *method, list **headers)
     int rc = -1;
     struct addrinfo hints;
     memset(&hints, '\0', sizeof (hints));
-    hints.ai_family = AF_UNSPEC;
+    hints.ai_family = AI_ALL;
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_flags = AI_NUMERICSERV | AI_V4MAPPED | AI_ADDRCONFIG;
 
