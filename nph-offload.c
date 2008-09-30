@@ -930,13 +930,13 @@ static int doHttp(const char *method, list **headers)
     for (addr = dns; addr != NULL; addr = addr->ai_next)
     {
         fd = socket(addr->ai_family, addr->ai_socktype, addr->ai_protocol);
-        if (connect(fd, addr->ai_addr, addr->ai_addrlen) == 0)
-            break;
-        else
+        if (fd != -1)
         {
+            if (connect(fd, addr->ai_addr, addr->ai_addrlen) == 0)
+                break;
             close(fd);
             fd = -1;
-        } // else
+        } // if
     } // for
     freeaddrinfo(dns);
 
