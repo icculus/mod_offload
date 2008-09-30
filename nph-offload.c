@@ -1076,8 +1076,10 @@ static inline int64 Min(const int64 a, const int64 b)
 } // Min
 
 
-static int cacheFork(const int sock, FILE *cacheio, const int64 max)
+static pid_t cacheFork(const int sock, FILE *cacheio, const int64 max)
 {
+    debugEcho("Cache needs refresh...pulling from base server...");
+
     const pid_t pid = fork();
 
     if (pid != 0)  // don't need these any more...
@@ -1090,13 +1092,13 @@ static int cacheFork(const int sock, FILE *cacheio, const int64 max)
     {
         nukeRequestFromCache();
         failure("500 Internal Server Error", "Couldn't fork for caching.");
-        return 0;
+        return pid;
     } // if
 
     else if (pid != 0)  // we're the parent.
     {
         debugEcho("fork()'d caching process! new pid is (%d).", (int) pid);
-        return 1;
+        return pid;
     } // else if
 
     // we're the child.
@@ -1151,7 +1153,7 @@ static int cacheFork(const int sock, FILE *cacheio, const int64 max)
 
     debugEcho("Successfully cached! Terminating!");
     terminate();  // always die.
-    return 0;
+    return -1;
 } // cacheFork
 
 
@@ -1332,7 +1334,8 @@ int main(int argc, char **argv, char **envp)
             if (!listFind(head, "Content-Type"))  // make sure this is sane.
                 listSet(&head, "Content-Type", "application/octet-stream");
 
-            listSet(&head, "X-Offload-Caching-PID", makeNum(getpid()));
+            const pid_t pid = cacheFork(sock, cacheio, max);
+            listSet(&head, "X-Offload-Caching-PID", makeNum(pid));
 
             list *item;
             for (item = head; item; item = item->next)
@@ -1340,8 +1343,6 @@ int main(int argc, char **argv, char **envp)
             fclose(metaout);  // !!! FIXME: check for errors
 
             metadata = head;
-            debugEcho("Cache needs refresh...pulling from base server...");
-            cacheFork(sock, cacheio, max);
         } // else
 
         putSemaphore();
