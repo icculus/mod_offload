@@ -846,7 +846,7 @@ static void readHeaders(const int fd, list **headers)
             else
             {
                 listSet(headers, "response", buf);
-                if (strncmp(buf, "HTTP/", 5) == 0)
+                if (strncasecmp(buf, "HTTP/", 5) == 0)
                 {
                     ptr = strchr(buf + 5, ' ');
                     if (ptr != NULL)
