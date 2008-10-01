@@ -1488,6 +1488,8 @@ static int serverMainline(int argc, char **argv, char **envp)
 #define GLISTENPORTSTR OFFLOAD_NUMSTR(GLISTENPORT)
 static const char *readClientHeaders(const int fd, const struct sockaddr *addr)
 {
+    debugEcho("Reading request headers...");
+
     int sawip = 0;
     const time_t endtime = time(NULL) + GTIMEOUT;
     int br = 0;
@@ -1528,6 +1530,8 @@ static const char *readClientHeaders(const int fd, const struct sockaddr *addr)
             buf[br] = '\0';
             if (seenresponse)
             {
+                debugEcho("Saw request line from client: '%s'", buf);
+
                 ptr = strchr(buf, ':');
                 if (ptr != NULL)
                 {
@@ -1545,7 +1549,9 @@ static const char *readClientHeaders(const int fd, const struct sockaddr *addr)
                             if ((trust[i]) && (strcmp(trust[i], ptr) == 0))
                                 break;
                         } // for
-                        sawip = ((!sawip) && (i < total));
+                        const int trusted = (i < total);
+                        debugEcho("This forwarded address %s from a trusted proxy.", trusted ? "is" : "is not");
+                        sawip = ((!sawip) && (trusted));
                         if (!sawip)
                             setenv("REMOTE_ADDR", ptr, 1);
                     } // if
@@ -1616,6 +1622,7 @@ static const char *readClientHeaders(const int fd, const struct sockaddr *addr)
             setenv("REMOTE_ADDR", buf, 1);
     } // if
 
+    debugEcho("done parsing request headers");
     return NULL;
 } // readClientHeaders
 
@@ -1636,6 +1643,8 @@ static inline void daemonChild(const int fd, const struct sockaddr *addr)
     stdin = fdopen(0, "rb");
     stdout = fdopen(1, "wb");
     stderr = fopen("/dev/null", "wb");
+
+    debugEcho("New child running to handle incoming request.");
 
     if ((stdin) && (stdout) && (stderr))
     {
