@@ -1490,7 +1490,33 @@ static const char *readClientHeaders(const int fd, const struct sockaddr *addr)
 {
     debugEcho("Reading request headers...");
 
-    int sawip = 0;
+    // !!! FIXME: do this without network-specifics?
+    void *ipptr = NULL;
+    if (addr->sa_family == AF_INET)
+        ipptr = &((struct sockaddr_in *) addr)->sin_addr;
+    else if (addr->sa_family == AF_INET6)
+        ipptr = &((struct sockaddr_in6 *) addr)->sin6_addr;
+
+    char remoteaddr[64] = { '\0' };
+    int trusted = 0;
+    if ((!ipptr) || (!inet_ntop(addr->sa_family, ipptr, remoteaddr, sizeof (remoteaddr))))
+        debugEcho("Don't know remote address!");
+    else
+    {
+        debugEcho("Remote address is %s", remoteaddr);
+
+        static const char *trust[] = { GLISTENTRUSTFWD };
+        const int total = sizeof (trust) / sizeof (trust[0]);
+        int i;
+        for (i = 0; i < total; i++)
+        {
+            if ((trust[i]) && (strcmp(trust[i], remoteaddr) == 0))
+                break;
+        } // for
+        trusted = (i < total);
+        debugEcho("This address %s a trusted proxy.", trusted ? "is" : "is not");
+    } // else
+
     const time_t endtime = time(NULL) + GTIMEOUT;
     int br = 0;
     char buf[1024];
@@ -1541,19 +1567,8 @@ static const char *readClientHeaders(const int fd, const struct sockaddr *addr)
 
                     if (strcasecmp(buf, "X-Forwarded-For") == 0)
                     {
-                        static const char *trust[] = { GLISTENTRUSTFWD };
-                        const int total = sizeof (trust) / sizeof (trust[0]);
-                        int i;
-                        for (i = 0; i < total; i++)
-                        {
-                            if ((trust[i]) && (strcmp(trust[i], ptr) == 0))
-                                break;
-                        } // for
-                        const int trusted = (i < total);
-                        debugEcho("This forwarded address %s from a trusted proxy.", trusted ? "is" : "is not");
-                        sawip = ((!sawip) && (trusted));
-                        if (!sawip)
-                            setenv("REMOTE_ADDR", ptr, 1);
+                        if (trusted)
+                            snprintf(remoteaddr, sizeof (remoteaddr), "%s", ptr);
                     } // if
 
                     else if (strcasecmp(buf, "User-Agent") == 0)
@@ -1609,18 +1624,8 @@ static const char *readClientHeaders(const int fd, const struct sockaddr *addr)
         } // else
     } // while
 
-    if (!sawip)
-    {
-        void *ptr = NULL;
-        // !!! FIXME: do this without network-specifics?
-        if (addr->sa_family == AF_INET)
-            ptr = &((struct sockaddr_in *) addr)->sin_addr;
-        else if (addr->sa_family == AF_INET6)
-            ptr = &((struct sockaddr_in6 *) addr)->sin6_addr;
-
-        if ((ptr) && (inet_ntop(addr->sa_family, ptr, buf, sizeof (buf))))
-            setenv("REMOTE_ADDR", buf, 1);
-    } // if
+    if (remoteaddr[0])
+        setenv("REMOTE_ADDR", remoteaddr, 1);
 
     debugEcho("done parsing request headers");
     return NULL;
