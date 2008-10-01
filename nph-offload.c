@@ -92,7 +92,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-#define GVERSION "1.1.2"
+#define GVERSION "1.1.3"
 #define GSERVERSTRING "nph-offload.c/" GVERSION
 
 #include "offload_server_config.h"
@@ -138,7 +138,8 @@ typedef uint64_t uint64;
 extern char **environ;
 
 static int GIsCacheProcess = 0;
-static char *Guri = NULL;
+static const char *Guri = NULL;
+static const char *GRemoteAddr = NULL;
 static char *GFilePath = NULL;
 static char *GMetaDataPath = NULL;
 static void *GSemaphore = NULL;
@@ -311,8 +312,7 @@ static void setDownloadRecord()
     uint8 sha1[20];
     DownloadRecord *downloads = NULL;
     const size_t maplen = sizeof (DownloadRecord) * MAX_DOWNLOAD_RECORDS;
-    char *remoteAddr = getenv("REMOTE_ADDR");
-    if (remoteAddr == NULL)
+    if (GRemoteAddr == NULL)
         return;  // oh well.
 
     GAllDownloads = GMyDownload = NULL;
@@ -345,7 +345,7 @@ static void setDownloadRecord()
     GAllDownloads = downloads = (DownloadRecord *) ptr;
 
     Sha1_init(&sha1data);
-    Sha1_append(&sha1data, (const uint8 *) remoteAddr, strlen(remoteAddr) + 1);
+    Sha1_append(&sha1data, (const uint8 *) GRemoteAddr, strlen(GRemoteAddr) + 1);
     Sha1_append(&sha1data, (const uint8 *) Guri, strlen(Guri) + 1);
     Sha1_finish(&sha1data, sha1);
 
@@ -403,7 +403,6 @@ static void removeDownloadRecord()
 
     GAllDownloads = GMyDownload = NULL;
 } // removeDownloadRecord
-
 #endif
 
 
@@ -575,6 +574,44 @@ static void listFree(list **l)
 } // listFree
 
 
+#if GSETPROCTITLE
+    #if defined(__linux__)
+        // okay.
+    #else
+        #warning GSETPROCTITLE not currently supported on this platform.
+        #undef GSETPROCTITLE
+        #define GSETPROCTITLE 0
+    #endif
+#endif
+
+#if !GSETPROCTITLE
+#define copyEnv(x) getenv(x)
+#define freeEnvCopies()
+#else
+static char **GArgv = NULL;
+static char *GLastArgv = NULL;
+static int GMaxArgvLen = 0;
+static int GNoMoreGetEnv = 0;
+static list *GEnvCopies = NULL;
+static const char *copyEnv(const char *key)
+{
+    const char *retval = listFind(GEnvCopies, key);
+    if ((retval == NULL) && (!GNoMoreGetEnv))
+    {
+        const char *envr = getenv(key);
+        if (envr != NULL)
+            retval = listSet(&GEnvCopies, key, envr);
+    } // if
+    return retval;
+} // copyEnv
+
+static inline void freeEnvCopies(void)
+{
+    listFree(&GEnvCopies);
+} // freeEnvCopies
+#endif
+
+
 static void terminate(void)
 {
     if (!GIsCacheProcess)
@@ -592,6 +629,8 @@ static void terminate(void)
     if (stdout) fclose(stdout);
     if (stderr) fclose(stderr);
     stdin = stdout = stderr = NULL;
+
+    freeEnvCopies();
 
     exit(0);
 } // terminate
@@ -784,7 +823,7 @@ static void debugInit(int argc, char **argv, char **envp)
     debugEcho("I am: %s", GSERVERSTRING);
     debugEcho("Base server: %s", GBASESERVER);
     debugEcho("User wants to get: %s", Guri);
-    debugEcho("Request from address: %s", getenv("REMOTE_ADDR"));
+    debugEcho("Request from address: %s", GRemoteAddr);
     debugEcho("Client User-Agent: %s", getenv("HTTP_USER_AGENT"));
     debugEcho("Referrer string: %s", getenv("HTTP_REFERER"));
     debugEcho("Request method: %s", getenv("REQUEST_METHOD"));
@@ -1139,6 +1178,18 @@ static pid_t cacheFork(const int sock, FILE *cacheio, const int64 max)
     signal(SIGBUS, catchsig);
     signal(SIGSEGV, catchsig);
 
+    #if GSETPROCTITLE
+        #ifdef __linux__
+        {
+            snprintf(GArgv[0], GMaxArgvLen, "offload: CACHE %s", Guri);
+            char *p = &GArgv[0][strlen(GArgv[0])];
+            while(p < GLastArgv)
+                *(p++) = '\0';
+            GArgv[1] = NULL;
+        }
+        #endif
+    #endif
+
     int64 br = 0;
     while (br < max)
     {
@@ -1171,7 +1222,10 @@ static pid_t cacheFork(const int sock, FILE *cacheio, const int64 max)
 
 static int serverMainline(int argc, char **argv, char **envp)
 {
-    Guri = getenv("REQUEST_URI");
+    const char *httprange = copyEnv("HTTP_RANGE");
+    const char *ifrange = copyEnv("HTTP_IF_RANGE");
+    Guri = copyEnv("REQUEST_URI");
+    GRemoteAddr = copyEnv("REMOTE_ADDR");
 
     debugInit(argc, argv, envp);
     if ((Guri == NULL) || (*Guri != '/'))
@@ -1181,11 +1235,47 @@ static int serverMainline(int argc, char **argv, char **envp)
     if (strcmp(Guri, "/robots.txt") == 0)
         failure("200 OK", "User-agent: *\nDisallow: /");
 
-    const char *reqmethod = getenv("REDIRECT_REQUEST_METHOD");
+    // !!! FIXME: favicon?
+
+    const char *reqmethod = copyEnv("REDIRECT_REQUEST_METHOD");
     if (reqmethod == NULL)
-        reqmethod = getenv("REQUEST_METHOD");
+        reqmethod = copyEnv("REQUEST_METHOD");
     if (reqmethod == NULL)
         reqmethod = "GET";
+
+    #if GSETPROCTITLE
+        #ifdef __linux__
+        {
+            // This nastiness inspired by proftpd.
+            int i;
+            for (i = 0; i < argc; i++)
+            {
+                if (!i || (GLastArgv + 1 == argv[i]))
+                    GLastArgv = argv[i] + strlen(argv[i]);
+            } // for
+            for (i = 0; envp[i] != NULL; i++)
+            {
+                if ((GLastArgv + 1) == envp[i])
+                    GLastArgv = envp[i] + strlen(envp[i]);
+            } // for
+
+            extern char *__progname, *__progname_full;
+            __progname = xstrdup("offload");
+            __progname_full = xstrdup(argv[0]);
+            GNoMoreGetEnv = 1;
+            static char *nullenv = NULL;
+            envp = environ = &nullenv;
+
+            GArgv = argv;
+            GMaxArgvLen = (GLastArgv - GArgv[0]) - 2;
+            snprintf(GArgv[0], GMaxArgvLen, "offload: %s %s %s", GRemoteAddr, reqmethod, Guri);
+            char *p = &GArgv[0][strlen(GArgv[0])];
+            while(p < GLastArgv)
+                *(p++) = '\0';
+            GArgv[1] = NULL;
+        }
+        #endif
+    #endif
 
     const int isget = (strcasecmp(reqmethod, "GET") == 0);
     const int ishead = (strcasecmp(reqmethod, "HEAD") == 0);
@@ -1246,8 +1336,6 @@ static int serverMainline(int argc, char **argv, char **envp)
     int64 endRange = max-1;
     int reportRange = 0;
     char *responseCode = "200 OK";
-    const char *httprange = getenv("HTTP_RANGE");
-    const char *ifrange = getenv("HTTP_IF_RANGE");
 
     if (ifrange != NULL)
     {
@@ -1396,6 +1484,7 @@ static int serverMainline(int argc, char **argv, char **envp)
     time_t lastReadTime = time(NULL);
     while (br < endRange)
     {
+        // !!! FIXME: sendfile and TCP_CORK?
         char data[32 * 1024];
         int64 readsize = startRange - br;
         if ((readsize <= 0) || (readsize > sizeof (data)))
@@ -1632,7 +1721,8 @@ static const char *readClientHeaders(const int fd, const struct sockaddr *addr)
 } // readClientHeaders
 
 
-static inline void daemonChild(const int fd, const struct sockaddr *addr)
+static inline void daemonChild(const int fd, const struct sockaddr *addr,
+                               int argc, char **argv)
 {
     if (fd == 0)
         dup2(fd, 1);
@@ -1654,7 +1744,7 @@ static inline void daemonChild(const int fd, const struct sockaddr *addr)
     if ((stdin) && (stdout) && (stderr))
     {
         if (readClientHeaders(0, addr) == NULL)  // NULL == no error.
-            serverMainline(0, NULL, environ);
+            serverMainline(argc, argv, environ);
     } // if
 
     // !!! FIXME: write an access_log or error_log.
@@ -1746,7 +1836,7 @@ static inline int daemonMainline(int argc, char **argv, char **envp)
             else
             {
                 close(fd);
-                daemonChild(newfd, &addr);
+                daemonChild(newfd, &addr, argc, argv);
                 terminate();  // just in case.
             } // else
         } // if

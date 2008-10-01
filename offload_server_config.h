@@ -85,6 +85,12 @@
 #define GMAXDUPEDOWNLOADS 1
 #endif
 
+// Set to 1 to try to change title in "ps" listings. It becomes:
+//   "offload: GET /my/url.whatever" (or whatever).
+#ifndef GSETPROCTITLE
+#define GSETPROCTITLE 1
+#endif
+
 // if you have a PowerPC, etc, flip this to 1.
 #ifndef PLATFORM_BIGENDIAN
 #if defined(__powerpc64__) || defined(__ppc__) || defined(__powerpc__) || defined(__POWERPC__)
