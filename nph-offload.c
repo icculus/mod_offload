@@ -587,6 +587,12 @@ static void terminate(void)
 
     if (GDebugFilePointer != NULL)
         fclose(GDebugFilePointer);
+
+    if (stdin) fclose(stdin);
+    if (stdout) fclose(stdout);
+    if (stderr) fclose(stderr);
+    stdin = stdout = stderr = NULL;
+
     exit(0);
 } // terminate
 
@@ -1612,7 +1618,6 @@ static const char *readClientHeaders(const int fd, const struct sockaddr *addr)
 
 static inline int daemonChild(const int fd, const struct sockaddr *addr)
 {
-    setsid();
     if (fd == 0)
         dup2(fd, 1);
     else if (fd == 1)
@@ -1634,18 +1639,15 @@ static inline int daemonChild(const int fd, const struct sockaddr *addr)
             serverMainline(0, NULL, environ);
     } // if
 
-    if (stdin) fclose(stdin);
-    if (stdout) fclose(stdout);
-    if (stderr) fclose(stderr);
-    stdin = stdout = stderr = NULL;
-
     // !!! FIXME: write an access_log or error_log.
-    exit(0);
+    terminate();
 } // daemonChild
 
 
 static inline int daemonMainline(int argc, char **argv, char **envp)
 {
+    signal(SIGCHLD, SIG_IGN);
+
     // !!! FIXME: move to own function.
     #if GLISTENDAEMONIZE
     {
@@ -1668,8 +1670,6 @@ static inline int daemonMainline(int argc, char **argv, char **envp)
         setsid();
     }
     #endif
-
-    signal(SIGCHLD, SIG_IGN);
 
     // !!! FIXME: move to own function.
     struct addrinfo hints;
