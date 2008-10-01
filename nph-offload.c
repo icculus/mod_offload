@@ -1114,9 +1114,13 @@ static pid_t cacheFork(const int sock, FILE *cacheio, const int64 max)
     // we're the child.
     GIsCacheProcess = 1;
     debugEcho("caching process (%d) starting up!", (int) getpid());
+
+    #if GMAXDUPEDOWNLOADS > 0
     if (GAllDownloads != NULL)
         munmap(GAllDownloads, sizeof (DownloadRecord) * MAX_DOWNLOAD_RECORDS);
     GAllDownloads = GMyDownload = NULL;
+    #endif
+
     fclose(stdin);
     fclose(stdout);
     fclose(stderr);
