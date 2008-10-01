@@ -1694,6 +1694,8 @@ static inline int daemonMainline(int argc, char **argv, char **envp)
         fd = socket(addr->ai_family, addr->ai_socktype, addr->ai_protocol);
         if (fd != -1)
         {
+            int on = 1;
+            setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
             if (bind(fd, addr->ai_addr, addr->ai_addrlen) == 0)
             {
                 if (listen(fd, 16) == 0)
