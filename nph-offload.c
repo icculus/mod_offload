@@ -1616,7 +1616,7 @@ static const char *readClientHeaders(const int fd, const struct sockaddr *addr)
 } // readClientHeaders
 
 
-static inline int daemonChild(const int fd, const struct sockaddr *addr)
+static inline void daemonChild(const int fd, const struct sockaddr *addr)
 {
     if (fd == 0)
         dup2(fd, 1);
@@ -1726,7 +1726,8 @@ static inline int daemonMainline(int argc, char **argv, char **envp)
             else
             {
                 close(fd);
-                return daemonChild(newfd, &addr);
+                daemonChild(newfd, &addr);
+                terminate();  // just in case.
             } // else
         } // if
     } // while
