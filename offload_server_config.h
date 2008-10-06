@@ -50,6 +50,19 @@
 #define GLISTENDAEMONIZE 0
 #endif
 
+// This works everywhere, but you probably don't want it if GLISTENPORT == 0.
+// Set this to non-zero to make each transaction append a line to a log file
+//  in Apache Combined Log Format.
+#ifndef GLOGACTIVITY
+#define GLOGACTIVITY 0
+#endif
+
+// Ignore this if GLOGACTIVITY == 0.
+// Set this to the filename to write log data to. Put a full path here!
+#ifndef GLOGFILE
+#define GLOGFILE "/usr/local/apache/logs/access.log"
+#endif
+
 // This is a list of servers that you are offloading.
 #ifndef GBASESERVER
 #define GBASESERVER "example.com"

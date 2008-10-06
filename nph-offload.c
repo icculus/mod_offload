@@ -98,6 +98,8 @@
  *    -DGLISTENTRUSTFWD='"127.0.0.1", "66.33.209.154"' \
  *    -DGOFFLOADDIR='"/home/icculus/offload2.icculus.org/offload-cache--offload2.icculus.org"' \
  *    -DGMAXDUPEDOWNLOADS=1 \
+ *    -DGLOGACTIVITY=1 \
+ *    -DGLOGFILE='"/home/icculus/logs/offload2.icculus.org/http/access.log"' \
  *    -g -O0 -Wall -o offload-daemon /home/icculus/mod_offload/nph-offload.c -lrt
  */
 
@@ -121,7 +123,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-#define GVERSION "1.1.3"
+#define GVERSION "1.1.4"
 #define GSERVERSTRING "nph-offload.c/" GVERSION
 
 #include "offload_server_config.h"
@@ -167,8 +169,14 @@ typedef uint64_t uint64;
 extern char **environ;
 
 static int GIsCacheProcess = 0;
+static int GHttpStatus = 0;
+static int64 GBytesSent = 0;
 static const char *Guri = NULL;
 static const char *GRemoteAddr = NULL;
+static const char *GReferer = NULL;
+static const char *GUserAgent = NULL;
+static const char *GReqVersion = NULL;
+static const char *GReqMethod = NULL;
 static char *GFilePath = NULL;
 static char *GMetaDataPath = NULL;
 static void *GSemaphore = NULL;
@@ -434,27 +442,26 @@ static void removeDownloadRecord()
 } // removeDownloadRecord
 #endif
 
+// strftime()'s "%a" gives you locale-dependent strings...
+static const char *GWeekday[] = {
+    "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat",
+};
+
+// strftime()'s "%b" gives you locale-dependent strings...
+static const char *GMonth[] = {
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+};
 
 static void printf_date_header(FILE *out)
 {
-    // strftime()'s "%a" gives you locale-dependent strings...
-    static const char *weekday[] = {
-        "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat",
-    };
-
-    // strftime()'s "%b" gives you locale-dependent strings...
-    static const char *month[] = {
-        "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-    };
-
     if (out == NULL)
         return;
 
     time_t now = time(NULL);
     const struct tm *tm = gmtime(&now);
-    fprintf(out, "Date: %s, %02d %s %04d %02d:%02d:%02d GMT\r\n",
-             weekday[tm->tm_wday], tm->tm_mday, month[tm->tm_mon],
+    fprintf(out, "Date: %s, %02d %s %d %02d:%02d:%02d GMT\r\n",
+             GWeekday[tm->tm_wday], tm->tm_mday, GMonth[tm->tm_mon],
              tm->tm_year+1900, tm->tm_hour, tm->tm_min, tm->tm_sec);
 } // printf_date_header
 
@@ -641,12 +648,49 @@ static inline void freeEnvCopies(void)
 #endif
 
 
+#if !GLOGACTIVITY
+#define outputLogEntry()
+#else
+static void outputLogEntry(void)
+{
+    FILE *out = fopen(GLOGFILE, "a");
+    if (out == NULL)
+        debugEcho("Failed to open log file for append!");
+    else
+    {
+        // Apache Combined Log Format:
+        //  http://httpd.apache.org/docs/1.3/logs.html#combined
+        // !!! FIXME: auth and identd?
+        time_t now = time(NULL);
+        const struct tm *tm = localtime(&now);
+        fprintf(out,
+            "%s - - [%02d/%s/%d:%02d:%02d:%02d %c%02d%02d]"
+            " \"%s %s%s%s\" %d %lld \"%s\" \"%s\"\n",
+            GRemoteAddr, tm->tm_mday, GMonth[tm->tm_mon],
+            tm->tm_year+1900, tm->tm_hour, tm->tm_min,
+            tm->tm_sec, (tm->tm_gmtoff < 0) ? '-' : '+',
+            (int) (abs((int) tm->tm_gmtoff) / (60*60)),
+            (int) (abs((int) tm->tm_gmtoff) % (60*60)),
+            GReqMethod ? GReqMethod : "",
+            Guri ? Guri : "",
+            (GReqVersion && *GReqVersion) ? " " : "",
+            GReqVersion ? GReqVersion : "",
+            GHttpStatus, (long long) GBytesSent,
+            GReferer ? GReferer : "-",
+            GUserAgent ? GUserAgent : "-");
+        fclose(out);
+    } // else
+} // outputLogEntry
+#endif
+
+
 static void terminate(void)
 {
     if (!GIsCacheProcess)
     {
         debugEcho("offload program is terminating...");
         removeDownloadRecord();
+        outputLogEntry();
         while (GSemaphoreOwned > 0)
             putSemaphore();
     } // if
@@ -793,6 +837,9 @@ static void failure_location(const char *httperr, const char *errmsg,
             httperr = ptr+1;
     } // if
 
+    if (!GHttpStatus)
+        GHttpStatus = atoi(httperr);
+
     debugEcho("failure() called:");
     debugEcho("  %s", httperr);
     debugEcho("  %s", errmsg);
@@ -841,6 +888,7 @@ static void debugInit(int argc, char **argv, char **envp)
     printf("Server: " GSERVERSTRING "\r\n");
     printf("Connection: close\r\n");
     printf("\r\n");
+    GHttpStatus = 200;
     #endif
 
     debugEcho("%s", "");
@@ -853,9 +901,9 @@ static void debugInit(int argc, char **argv, char **envp)
     debugEcho("Base server: %s", GBASESERVER);
     debugEcho("User wants to get: %s", Guri);
     debugEcho("Request from address: %s", GRemoteAddr);
-    debugEcho("Client User-Agent: %s", getenv("HTTP_USER_AGENT"));
-    debugEcho("Referrer string: %s", getenv("HTTP_REFERER"));
-    debugEcho("Request method: %s", getenv("REQUEST_METHOD"));
+    debugEcho("Client User-Agent: %s", GUserAgent);
+    debugEcho("Referrer string: %s", GReferer);
+    debugEcho("Request method: %s", GReqMethod);
     debugEcho("Timeout for HTTP HEAD request is %d", GTIMEOUT);
     debugEcho("Data cache goes in %s", GOFFLOADDIR);
     debugEcho("My PID: %d\n", (int) getpid());
@@ -1255,8 +1303,19 @@ static int serverMainline(int argc, char **argv, char **envp)
     const char *ifrange = copyEnv("HTTP_IF_RANGE");
     Guri = copyEnv("REQUEST_URI");
     GRemoteAddr = copyEnv("REMOTE_ADDR");
+    GReferer = copyEnv("HTTP_REFERER");
+    GUserAgent = copyEnv("HTTP_USER_AGENT");
+    GReqVersion = copyEnv("REQUEST_VERSION");
+    GReqMethod = copyEnv("REDIRECT_REQUEST_METHOD");
+    if (GReqMethod == NULL)
+        GReqMethod = copyEnv("REQUEST_METHOD");
+    if (GReqMethod == NULL)
+        GReqMethod = "GET";
+    if (GReqVersion == NULL)
+        GReqVersion = "";
 
     debugInit(argc, argv, envp);
+
     if ((Guri == NULL) || (*Guri != '/'))
         failure("500 Internal Server Error", "Bad request URI");
 
@@ -1265,12 +1324,6 @@ static int serverMainline(int argc, char **argv, char **envp)
         failure("200 OK", "User-agent: *\nDisallow: /");
 
     // !!! FIXME: favicon?
-
-    const char *reqmethod = copyEnv("REDIRECT_REQUEST_METHOD");
-    if (reqmethod == NULL)
-        reqmethod = copyEnv("REQUEST_METHOD");
-    if (reqmethod == NULL)
-        reqmethod = "GET";
 
     #if GSETPROCTITLE
         #ifdef __linux__
@@ -1297,7 +1350,7 @@ static int serverMainline(int argc, char **argv, char **envp)
 
             GArgv = argv;
             GMaxArgvLen = (GLastArgv - GArgv[0]) - 2;
-            snprintf(GArgv[0], GMaxArgvLen, "offload: %s %s %s", GRemoteAddr, reqmethod, Guri);
+            snprintf(GArgv[0], GMaxArgvLen, "offload: %s %s %s", GRemoteAddr, GReqMethod, Guri);
             char *p = &GArgv[0][strlen(GArgv[0])];
             while(p < GLastArgv)
                 *(p++) = '\0';
@@ -1306,8 +1359,8 @@ static int serverMainline(int argc, char **argv, char **envp)
         #endif
     #endif
 
-    const int isget = (strcasecmp(reqmethod, "GET") == 0);
-    const int ishead = (strcasecmp(reqmethod, "HEAD") == 0);
+    const int isget = (strcasecmp(GReqMethod, "GET") == 0);
+    const int ishead = (strcasecmp(GReqMethod, "HEAD") == 0);
     if ( (strchr(Guri, '?') != NULL) || ((!isget) && (!ishead)) )
         failure("403 Forbidden", "Offload server doesn't do dynamic content.");
 
@@ -1483,6 +1536,9 @@ static int serverMainline(int argc, char **argv, char **envp)
             failure("500 Internal Server Error", "Couldn't access cached data.");
     } // else
 
+    if (!GHttpStatus)
+        GHttpStatus = atoi(responseCode);
+
     printf("HTTP/1.1 %s\r\n", responseCode);
     printf("Status: %s\r\n", responseCode);
     printf_date_header(stdout);
@@ -1572,12 +1628,14 @@ static int serverMainline(int argc, char **argv, char **envp)
         {
             #if ((GDEBUG) && (!GDEBUGTOFILE))
             debugEcho("Would have written %d bytes", len);
+            GBytesSent += len;
             #elif ((!GDEBUG) || (GDEBUGTOFILE))
-            if (fwrite(data, len, 1, stdout) == 1)
-                debugEcho("Wrote %d bytes", len);
-            else
+            const int bw = (int) fwrite(data, 1, len, stdout);
+            debugEcho("Wrote %d bytes", bw);
+            GBytesSent += (int64) bw;
+            if (bw != len)
             {
-                debugEcho("FAILED to write %d bytes to client!", len);
+                debugEcho("FAILED to write %d bytes to client!", len-bw);
                 break;
             } // else
             #endif
@@ -1722,7 +1780,9 @@ static const char *readClientHeaders(const int fd, const struct sockaddr *addr)
                         while (*ptr == ' ')
                             ptr++;
                         setenv("REQUEST_URI", start, 1);
-                        if (strncasecmp(ptr, "HTTP/", 5) != 0)
+                        if (strncasecmp(ptr, "HTTP/", 5) == 0)
+                            setenv("REQUEST_VERSION", ptr, 1);
+                        else
                             ptr = NULL;  // fail below.
                     } // if
                 } // if
@@ -1772,11 +1832,11 @@ static inline void daemonChild(const int fd, const struct sockaddr *addr,
 
     if ((stdin) && (stdout) && (stderr))
     {
+        setbuf(stdout, NULL);
         if (readClientHeaders(0, addr) == NULL)  // NULL == no error.
             serverMainline(argc, argv, environ);
     } // if
 
-    // !!! FIXME: write an access_log or error_log.
     terminate();
 } // daemonChild
 
