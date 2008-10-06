@@ -79,27 +79,27 @@
 // Restart the server so the AliasMatch configuration tweak is picked up.
 //
 //
-// Building:
-//  Edit offload_server_config.h to fit your needs, or override #defines
-//  on the command line. I use a shell script that looks like this:
-//
-//    #!/bin/sh
-//
-//    exec gcc \
-//    -DGDEBUG=0 \
-//    -DSHM_NAME='"mod-offload-offload2-icculus-org"' \
-//    -DGBASESERVER='"icculus.org"' \
-//    -DGLISTENPORT=9090 \
-//    -DGLISTENDAEMONIZE=1 \
-//    -DGLISTENTRUSTFWD='"127.0.0.1", "66.33.209.154"' \
-//    -DGOFFLOADDIR='"/home/icculus/offload2.icculus.org/offload-cache--offload2.icculus.org"' \
-//    -DGMAXDUPEDOWNLOADS=1 \
-//    -g -O0 -Wall -o offload-daemon /home/icculus/mod_offload/nph-offload.c -lrt
-//
-//
-//
-//
 // This file is written by Ryan C. Gordon (icculus@icculus.org).
+
+/*
+ * Building:
+ *
+ *  Edit offload_server_config.h to fit your needs, or override #defines
+ *  on the command line. I use a shell script that looks like this:
+ *
+ *    #!/bin/sh
+ *
+ *    exec gcc \
+ *    -DGDEBUG=0 \
+ *    -DSHM_NAME='"mod-offload-offload2-icculus-org"' \
+ *    -DGBASESERVER='"icculus.org"' \
+ *    -DGLISTENPORT=9090 \
+ *    -DGLISTENDAEMONIZE=1 \
+ *    -DGLISTENTRUSTFWD='"127.0.0.1", "66.33.209.154"' \
+ *    -DGOFFLOADDIR='"/home/icculus/offload2.icculus.org/offload-cache--offload2.icculus.org"' \
+ *    -DGMAXDUPEDOWNLOADS=1 \
+ *    -g -O0 -Wall -o offload-daemon /home/icculus/mod_offload/nph-offload.c -lrt
+ */
 
 #include <stdio.h>
 #include <stdlib.h>
