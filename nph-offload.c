@@ -1781,34 +1781,34 @@ static inline void daemonChild(const int fd, const struct sockaddr *addr,
 } // daemonChild
 
 
-static inline int daemonMainline(int argc, char **argv, char **envp)
+#if !GLISTENDAEMONIZE
+#define daemonToBackground()
+#else
+static void daemonToBackground(void)
 {
-    signal(SIGCHLD, SIG_IGN);
+    const pid_t backpid = fork();
+    if (backpid > 0)  // parent.
+        exit(0);
 
-    // !!! FIXME: move to own function.
-    #if GLISTENDAEMONIZE
+    else if (backpid == -1)
     {
-        const pid_t backpid = fork();
-        if (backpid > 0)  // parent.
-            return 0;  // done.
+        fprintf(stderr, "Failed to fork(): %s\n", strerror(errno));
+        exit(1);
+    } // if
 
-        else if (backpid == -1)
-        {
-            fprintf(stderr, "Failed to fork(): %s\n", strerror(errno));
-            return 5;
-        } // if
+    // we're the child. Welcome to the background.
+    fclose(stdin);
+    fclose(stdout);
+    fclose(stderr);
+    stdin = stderr = stdout = NULL;
+    chdir("/");
+    setsid();
+}
+#endif
 
-        // we're the child. Welcome to the background.
-        fclose(stdin);
-        fclose(stdout);
-        fclose(stderr);
-        stdin = stderr = stdout = NULL;
-        chdir("/");
-        setsid();
-    }
-    #endif
 
-    // !!! FIXME: move to own function.
+static int daemonListenSocket(void)
+{
     struct addrinfo hints;
     memset(&hints, '\0', sizeof (hints));
     hints.ai_family = GLISTENFAMILY;
@@ -1821,7 +1821,7 @@ static inline int daemonMainline(int argc, char **argv, char **envp)
     {
         if (stderr != NULL)
             fprintf(stderr, "getaddrinfo failure: %s\n", gai_strerror(rc));
-        return 1;
+        return -1;
     } // if
 
     int fd = -1;
@@ -1849,8 +1849,20 @@ static inline int daemonMainline(int argc, char **argv, char **envp)
     {
         if (stderr != NULL)
             fprintf(stderr, "Failed to bind socket.\n");
-        return 2;
     } // if
+
+    return fd;
+} // daemonListenSocket
+
+
+static inline int daemonMainline(int argc, char **argv, char **envp)
+{
+    signal(SIGCHLD, SIG_IGN);
+    daemonToBackground();
+
+    const int fd = daemonListenSocket();
+    if (fd == -1)
+        return 2;
 
     while (1)  // loop forever.
     {
