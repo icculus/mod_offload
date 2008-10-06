@@ -1,6 +1,8 @@
 // This is a C program that handles offloading of bandwidth from a web
 //  server. It's a sort of poor-man's Akamai. It doesn't need anything
 //  terribly complex (a webserver with cgi-bin support, a writable directory).
+// It can run as a cgi-bin program, or as a quick-and-dirty standalone HTTP
+//  server.
 //
 // It works like this:
 //  - You have a webserver with dynamic content, and static content that
@@ -37,38 +39,65 @@
 
 //
 // Installation:
-// You need PHP with --enable-sysvsem support. You should configure PHP to not
-//  have a time limit on script execution (max_execution_time setting, or
-//  just don't run this script in safe mode and it'll handle it). PHP for
-//  Windows currently doesn't support sysvsem, so until someone writes me
-//  a mutex implementation, we assume you'll use a Unix box for this script.
+// You need a Unix-like system, like Linux, BSD, or Mac OS X. This won't
+//  work on Windows (try the PHP version there, you might have some luck).
 //
-// You need Apache to push every web request to this script, presumably in a
-//  virtual host, if not the entire server.
+// If you're building this as a standalone server, set the options you want,
+//  compile it and start it running.
 //
-// Assuming this script was at /www/scripts/index.php, you would want to add
+// If you want to run as a cgi-bin program:
+// You need Apache (or whatever) to push every web request to this program,
+//  presumably in a virtual host, if not the entire server.
+//
+// Assuming this program was at /www/cgi-bin/index.cgi, you would want to add
 //  this to Apache's config:
 //
-//   AliasMatch ^.*$ "/www/scripts/index.php"
+//   AliasMatch ^.*$ "/www/cgi-bin/index.cgi"
+//
+// You might need a "AddHandler cgi-script .cgi" or some other magic.
 //
 // If you don't have control over the virtual host's config file, you can't
 //  use AliasMatch, but if you can put an .htaccess file in the root of the
 //  virtual host, you can get away with this:
 //
-//   ErrorDocument 404 /index.php
+//   ErrorDocument 404 /cgi-bin/index.cgi
 //
 // This will make all missing files (everything) run the script, which will
 //  then cache and distribute the correct content, including overriding the
 //  404 status code with the correct one. Be careful about files that DO exist
 //  in that vhost directory, though. They won't offload.
 //
+// In this case, Apache will report the correct status message to the client,
+//  but log all offloaded files as 404 Not Found. This can't be helped. Run
+//  the server as standalone on a different port and have Apache proxy to it,
+//  or don't use Apache at all.
+//
 // You can offload multiple base servers with one box: set up one virtual host
 //  on the offload server for each base server. This lets each base server
 //  have its own cache and configuration.
 //
-// Then edit offload_server_config.php to fit your needs.
-//
 // Restart the server so the AliasMatch configuration tweak is picked up.
+//
+//
+// Building:
+//  Edit offload_server_config.h to fit your needs, or override #defines
+//  on the command line. I use a shell script that looks like this:
+//
+//    #!/bin/sh
+//
+//    exec gcc \
+//    -DGDEBUG=0 \
+//    -DSHM_NAME='"mod-offload-offload2-icculus-org"' \
+//    -DGBASESERVER='"icculus.org"' \
+//    -DGLISTENPORT=9090 \
+//    -DGLISTENDAEMONIZE=1 \
+//    -DGLISTENTRUSTFWD='"127.0.0.1", "66.33.209.154"' \
+//    -DGOFFLOADDIR='"/home/icculus/offload2.icculus.org/offload-cache--offload2.icculus.org"' \
+//    -DGMAXDUPEDOWNLOADS=1 \
+//    -g -O0 -Wall -o offload-daemon /home/icculus/mod_offload/nph-offload.c -lrt
+//
+//
+//
 //
 // This file is written by Ryan C. Gordon (icculus@icculus.org).
 
