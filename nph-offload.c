@@ -856,6 +856,7 @@ static void failure_location(const char *httperr, const char *errmsg,
         printf("Content-type: text/plain; charset=utf-8\r\n");
         printf("\r\n");
         printf("%s\n\n", errmsg);
+        GBytesSent += strlen(errmsg) + 2;
     } // if
 
     terminate();
