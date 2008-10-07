@@ -1650,7 +1650,7 @@ static int serverMainline(int argc, char **argv, char **envp)
         } // if
 #endif
 
-        else if ((br >= startRange) && (br < endRange))
+        if ((br >= startRange) && (br < endRange))
         {
             #if ((GDEBUG) && (!GDEBUGTOFILE))
             debugEcho("Would have written %d bytes", len);
