@@ -1629,7 +1629,6 @@ static int serverMainline(int argc, char **argv, char **envp)
             break;   // select() and fstat() should have caught this...
         } // if
 
-#if 0
         // see if the remote end shutdown their end of the socket
         //  (web browser user hit cancel, etc).
         int deadsocket = 0;
@@ -1645,12 +1644,11 @@ static int serverMainline(int argc, char **argv, char **envp)
         } // while
         #endif
 
-        if (deadsocket || feof(stdout))
+        if (deadsocket || feof(stdout) || ferror(stdout))
         {
             debugEcho("EOF on stdout!");
             break;
         } // if
-#endif
 
         if ((br >= startRange) && (br < endRange))
         {
