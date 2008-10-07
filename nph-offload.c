@@ -698,6 +698,14 @@ static void terminate(void)
     if (GDebugFilePointer != NULL)
         fclose(GDebugFilePointer);
 
+    #if GLISTENPORT
+    char ch = 0;
+    shutdown(0, SHUT_RDWR);
+    shutdown(1, SHUT_RDWR);
+    while (recv(0, &ch, sizeof (ch), 0) > 0) {}
+    while (recv(1, &ch, sizeof (ch), 0) > 0) {}
+    #endif
+
     if (stdin) fclose(stdin);
     if (stdout) fclose(stdout);
     if (stderr) fclose(stderr);
@@ -1189,12 +1197,12 @@ static void cacheFailure(const char *err)
 } // cacheFailure
 
 
-static void catchsig(int sig)
+static void cacheProcessSig(int sig)
 {
     char errbuf[128];
     snprintf(errbuf, sizeof (errbuf), "caught signal #%d!", sig);
     cacheFailure(errbuf);
-} // catchsig
+} // cacheProcessSig
 
 
 static inline int64 Min(const int64 a, const int64 b)
@@ -1246,15 +1254,15 @@ static pid_t cacheFork(const int sock, FILE *cacheio, const int64 max)
     setsid();
 
     // try to clean up in most fatal cases.
-    signal(SIGHUP, catchsig);
-    signal(SIGINT, catchsig);
-    signal(SIGTERM, catchsig);
-    signal(SIGPIPE, catchsig);
-    signal(SIGQUIT, catchsig);
-    signal(SIGTRAP, catchsig);
-    signal(SIGABRT, catchsig);
-    signal(SIGBUS, catchsig);
-    signal(SIGSEGV, catchsig);
+    signal(SIGHUP, cacheProcessSig);
+    signal(SIGINT, cacheProcessSig);
+    signal(SIGTERM, cacheProcessSig);
+    signal(SIGPIPE, cacheProcessSig);
+    signal(SIGQUIT, cacheProcessSig);
+    signal(SIGTRAP, cacheProcessSig);
+    signal(SIGABRT, cacheProcessSig);
+    signal(SIGBUS, cacheProcessSig);
+    signal(SIGSEGV, cacheProcessSig);
 
     #if GSETPROCTITLE
         #ifdef __linux__
@@ -1619,11 +1627,28 @@ static int serverMainline(int argc, char **argv, char **envp)
             break;   // select() and fstat() should have caught this...
         } // if
 
-        if (feof(stdout))
+#if 0
+        // see if the remote end shutdown their end of the socket
+        //  (web browser user hit cancel, etc).
+        int deadsocket = 0;
+
+        #if GLISTENPORT
+        while (1)
+        {
+            char onebyte = 0;
+            const ssize_t recvval = recv(1, &onebyte, sizeof (onebyte), MSG_DONTWAIT);
+            deadsocket = (recvval == 0);
+            if ( ((recvval < 0) && (errno == EAGAIN)) || (deadsocket) )
+                break;
+        } // while
+        #endif
+
+        if (deadsocket || feof(stdout))
         {
             debugEcho("EOF on stdout!");
             break;
         } // if
+#endif
 
         else if ((br >= startRange) && (br < endRange))
         {
@@ -1811,9 +1836,27 @@ static const char *readClientHeaders(const int fd, const struct sockaddr *addr)
 } // readClientHeaders
 
 
+static void daemonChildSig(int sig)
+{
+    debugEcho("caught signal #%d!", sig);
+    terminate();
+} // daemonChildSig
+
+
 static inline void daemonChild(const int fd, const struct sockaddr *addr,
                                int argc, char **argv)
 {
+    // try to clean up in most fatal cases.
+    signal(SIGHUP, daemonChildSig);
+    signal(SIGINT, daemonChildSig);
+    signal(SIGTERM, daemonChildSig);
+    signal(SIGPIPE, daemonChildSig);
+    signal(SIGQUIT, daemonChildSig);
+    signal(SIGTRAP, daemonChildSig);
+    signal(SIGABRT, daemonChildSig);
+    signal(SIGBUS, daemonChildSig);
+    signal(SIGSEGV, daemonChildSig);
+
     if (fd == 0)
         dup2(fd, 1);
     else if (fd == 1)
