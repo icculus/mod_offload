@@ -125,7 +125,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-#define GVERSION "1.1.4"
+#define GVERSION "1.1.5"
 #define GSERVERSTRING "nph-offload.c/" GVERSION
 
 #include "offload_server_config.h"
