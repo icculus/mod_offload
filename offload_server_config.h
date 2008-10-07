@@ -7,10 +7,16 @@
 #define GDEBUG 0
 #endif
 
-// Set GDEBUGTOFILE to write all debug info to files in GOFFLOADDIR, if
+// Set GDEBUGTOFILE to write all debug info to files in GDEBUGDIR, if
 //  GDEBUG is also true. You probably want this to be true most cases.
 #ifndef GDEBUGTOFILE
 #define GDEBUGTOFILE 1
+#endif
+
+// Ignore this if either GDEBUG or GDEBUGTOFILE are zero.
+// Set GDEBUGDIR to where debug logs should be written.
+#ifndef GDEBUGDIR
+#define GDEBUGDIR "/usr/local/apache/logs"
 #endif
 
 // Set this to non-zero to provide a listen server that serves HTTP requests

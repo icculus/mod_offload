@@ -198,7 +198,7 @@ static FILE *getDebugFilePointer(void)
     if (GDebugFilePointer == NULL)
     {
         char buf[PATH_MAX];
-        snprintf(buf, sizeof(buf), GOFFLOADDIR "/debug-%d", (int) getpid());
+        snprintf(buf, sizeof(buf), GDEBUGDIR "/debug-%d", (int) getpid());
         GDebugFilePointer = fopen(buf, "a");
     } // if
     return GDebugFilePointer;
