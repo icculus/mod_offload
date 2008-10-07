@@ -91,15 +91,17 @@
  *
  *    exec gcc \
  *    -DGDEBUG=0 \
+ *    -DGDEBUGTOFILE=1 \
+ *    -DGDEBUGDIR='"/home/icculus/offload2.icculus.org/logs"' \
  *    -DSHM_NAME='"mod-offload-offload2-icculus-org"' \
  *    -DGBASESERVER='"icculus.org"' \
  *    -DGLISTENPORT=9090 \
  *    -DGLISTENDAEMONIZE=1 \
  *    -DGLISTENTRUSTFWD='"127.0.0.1", "66.33.209.154"' \
- *    -DGOFFLOADDIR='"/home/icculus/offload2.icculus.org/offload-cache--offload2.icculus.org"' \
+ *    -DGOFFLOADDIR='"/home/icculus/offload2.icculus.org/cache"' \
  *    -DGMAXDUPEDOWNLOADS=1 \
  *    -DGLOGACTIVITY=1 \
- *    -DGLOGFILE='"/home/icculus/logs/offload2.icculus.org/http/access.log"' \
+ *    -DGLOGFILE='"/home/icculus/offload2.icculus.org/logs/access.log"' \
  *    -g -O0 -Wall -o offload-daemon /home/icculus/mod_offload/nph-offload.c -lrt
  */
 
