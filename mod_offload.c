@@ -100,7 +100,7 @@
 #include "http_main.h"
 #include "http_protocol.h"
 
-#define MOD_OFFLOAD_VER "1.0.1"
+#define MOD_OFFLOAD_VER "1.0.2"
 #define DEFAULT_MIN_OFFLOAD_SIZE (5 * 1024)
 #define VERSION_COMPONENT "mod_offload/"MOD_OFFLOAD_VER
 
@@ -361,11 +361,18 @@ static const char *offload_debug(cmd_parms *parms, void *mconfig, int flag)
 
 
 static const char *offload_host(cmd_parms *parms, void *mconfig,
-                                const char *arg)
+                                const char *_arg)
 {
     offload_dir_config *cfg = (offload_dir_config *) mconfig;
     char **hostelem = (char **) apr_array_push(cfg->offload_hosts);
     apr_sockaddr_t *addr = (apr_sockaddr_t *) apr_array_push(cfg->offload_ips);
+    char *ptr = NULL;
+    char arg[512];
+
+    apr_cpystrn(arg, _arg, sizeof (arg));
+    ptr = strchr(arg, ':');
+    if (ptr != NULL)
+        *ptr = '\0';   /* chop off port number if it's there. */
 
     #if TARGET_APACHE_1_3
     struct hostent *hp = ap_pgethostbyname(parms->pool, arg);
@@ -381,7 +388,7 @@ static const char *offload_host(cmd_parms *parms, void *mconfig,
     memcpy(addr, resolved, sizeof (apr_sockaddr_t));
     #endif
 
-    *hostelem = apr_pstrdup(parms->pool, arg);
+    *hostelem = apr_pstrdup(parms->pool, _arg);
     return NULL;  /* no error. */
 } /* offload_host */
 
