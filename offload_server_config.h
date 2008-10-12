@@ -69,9 +69,19 @@
 #define GLOGFILE "/usr/local/apache/logs/access.log"
 #endif
 
-// This is a list of servers that you are offloading.
+// This is the server that you are offloading's hostname.
 #ifndef GBASESERVER
 #define GBASESERVER "example.com"
+#endif
+
+// This is the server that you are offloading's IP address.
+//  We use this for DNS lookups (GBASESERVER is used for the "Host:" field in 
+//  HTTP requests, etc). If you know the IP address will never change, you can
+//  save the several hundred kilobytes of address space that glibc uses...it
+//  loads a separate shared library for the DNS lookup, but it doesn't need 
+//  to if GBASESERVERIP is an IP address in "xxx.xxx.xxx.xxx" format.
+#ifndef GBASESERVERIP
+#define GBASESERVERIP GBASESERVER
 #endif
 
 // This is the port on the base server to connect to (default for HTTP is 80).

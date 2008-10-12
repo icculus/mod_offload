@@ -95,6 +95,7 @@
  *    -DGDEBUGDIR='"/home/icculus/offload2.icculus.org/logs"' \
  *    -DSHM_NAME='"mod-offload-offload2-icculus-org"' \
  *    -DGBASESERVER='"icculus.org"' \
+ *    -DGBASESERVERIP='"67.106.77.212"' \
  *    -DGLISTENPORT=9090 \
  *    -DGLISTENDAEMONIZE=1 \
  *    -DGLISTENTRUSTFWD='"127.0.0.1", "66.33.209.154"' \
@@ -125,7 +126,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-#define GVERSION "1.1.5"
+#define GVERSION "1.1.6"
 #define GSERVERSTRING "nph-offload.c/" GVERSION
 
 #include "offload_server_config.h"
@@ -1061,7 +1062,7 @@ static int doHttp(const char *method, list **headers)
     hints.ai_flags = AI_NUMERICSERV | AI_V4MAPPED | AI_ALL | AI_ADDRCONFIG;
 
     struct addrinfo *dns = NULL;
-    if ((rc = getaddrinfo(GBASESERVER, GBASESERVERPORTSTR, &hints, &dns)) != 0)
+    if ((rc = getaddrinfo(GBASESERVERIP, GBASESERVERPORTSTR, &hints, &dns)) != 0)
     {
         debugEcho("getaddrinfo failure: %s", gai_strerror(rc));
         failure("503 Service Unavailable", "Offload base server hostname lookup failure.");
