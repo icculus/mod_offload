@@ -138,5 +138,29 @@
 #define SHM_NAME "mod-offload"
 #endif
 
+// You probably should leave this alone if you don't know what you're doing.
+// Set this to non-zero to disable caching. This can be useful if you just
+//  want a lightweight HTTP server to handle the heavy lifting for large
+//  static files. For example, you could have Apache running on port 80 to
+//  handle most requests, so you get all the PHP, SSL, mod_*, .htaccess, etc
+//  goodness, but Apache eats several megabytes of RAM per connection when
+//  serving static files. If you have a multi-gigabyte static file, a client
+//  might consume that server's RAM for several hours to complete the
+//  transfer. Since most of the memory Apache consumes is irrelevant to
+//  sending static files, it might make sense to offload it to a lightweight
+//  process like this, with a 302 Redirect, and free up those resources for
+//  dynamic content. Very quickly you find yourself saving hundreds of
+//  megabytes.
+// GNOCACHE changes a few rules. This process will no longer cache files, and
+//  GOFFLOADDIR refers to the DocumentRoot where files are read from. We will
+//  still do HTTP HEAD requests to the GBASESERVER for metadata, and to verify
+//  that we have access to the file (since we do no authorization
+//  ourselves). We access the file directly, instead of caching over HTTP, so
+//  be careful about file permissions, URI aliases, etc. This probably is only
+//  useful with GLISTENPORT != 0.
+#ifndef GNOCACHE
+#define GNOCACHE 0
+#endif
+
 // end of offload_server_config.h ...
 

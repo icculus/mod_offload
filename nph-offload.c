@@ -181,10 +181,14 @@ static const char *GUserAgent = NULL;
 static const char *GReqVersion = NULL;
 static const char *GReqMethod = NULL;
 static char *GFilePath = NULL;
-static char *GMetaDataPath = NULL;
 static void *GSemaphore = NULL;
 static int GSemaphoreOwned = 0;
 static FILE *GDebugFilePointer = NULL;
+
+#if !GNOCACHE
+static char *GMetaDataPath = NULL;
+#endif
+
 
 static void failure_location(const char *, const char *, const char *);
 static inline void failure(const char *httperr, const char *errmsg)
@@ -503,14 +507,6 @@ static int64 atoi64(const char *str)
 } // atoi64
 
 
-static const char *makeNum(int64 num)
-{
-    static char buf[64];
-    snprintf(buf, sizeof (buf), "%lld", (long long) num);
-    return buf;
-} // makeNum
-
-
 static void *xmalloc(const size_t len)
 {
     void *ptr = malloc(len);
@@ -718,125 +714,6 @@ static void terminate(void)
 
     exit(0);
 } // terminate
-
-
-static list *loadMetadata(const char *fname)
-{
-    list *retval = NULL;
-    struct stat statbuf;
-    int fd = open(fname, O_RDONLY);
-    if (fd == -1)
-        return NULL;
-
-    if (fstat(fd, &statbuf) == -1)
-    {
-        close(fd);
-        return NULL;
-    } // if
-
-    char *buf = (char *) xmalloc(statbuf.st_size + 1);
-    if (read(fd, buf, statbuf.st_size) != statbuf.st_size)
-    {
-        free(buf);
-        close(fd);
-        return NULL;
-    } // if
-
-    buf[statbuf.st_size] = '\0';
-    close(fd);
-
-    char *ptr = buf;
-    int total = 0;
-    while (1)
-    {
-        char *key = ptr;
-        ptr = strchr(ptr, '\n');
-        if (ptr == NULL)
-            break;
-        *(ptr++) = '\0';
-        char *value = ptr;
-        ptr = strchr(ptr, '\n');
-        if (ptr == NULL)
-            break;
-        *(ptr++) = '\0';
-        if (*key != '\0')
-            listSet(&retval, key, value);
-        debugEcho("Loaded metadata '%s' => '%s'", key, value);
-        total++;
-    } // while
-
-    free(buf);
-    debugEcho("Loaded %d metadata pair(s).", total);
-
-    return retval;
-} // loadMetadata
-
-
-static int cachedMetadataMostRecent(const list *metadata, const list *head)
-{
-    const char *contentlength = listFind(metadata, "Content-Length");
-    if (!contentlength)
-        return 0;
-
-    const char *etag = listFind(metadata, "ETag");
-    if (!etag)
-        return 0;
-
-    const char *lastmodified = listFind(metadata, "Last-Modified");
-    if (!lastmodified)
-        return 0;
-
-    if (strcmp(contentlength, listFind(head, "Content-Length")) != 0)
-        return 0;
-
-    if (strcmp(etag, listFind(head, "ETag")) != 0)
-        return 0;
-
-    if (strcmp(lastmodified, listFind(head, "Last-Modified")) != 0)
-    {
-        const char *isweak = listFind(metadata, "X-Offload-Is-Weak");
-        if ( (!isweak) || (strcmp(isweak, "0") != 0) )
-            return 0;
-    } // if
-
-    // See if file size != Content-Length, and if it isn't,
-    //  see if X-Offload-Caching-PID still exists. If process
-    //  is missing, assume transfer died and recache.
-    struct stat statbuf;
-    if (stat(GFilePath, &statbuf) == -1)
-        return 0;
-
-    const int64 fsize = statbuf.st_size;
-    if (fsize != atoi64(contentlength))
-    {
-        // whoa, we were supposed to cache this!
-        const char *cacher = listFind(metadata, "X-Offload-Caching-PID");
-        if (!cacher)
-            return 0;
-
-        const int cacherpid = atoi(cacher);
-        if (process_dead(cacherpid))
-        {
-            debugEcho("Caching process ID died!");
-            return 0;
-        } // if
-    } // if
-
-    return 1;
-} // cachedMetadataMostRecent
-
-
-static void nukeRequestFromCache(void)
-{
-    debugEcho("Nuking request from cache...");
-    getSemaphore();
-    if (GMetaDataPath != NULL)
-        unlink(GMetaDataPath);
-    if (GFilePath != NULL)
-        unlink(GFilePath);
-    putSemaphore();
-} // nukeRequestFromCache
-
 
 static void failure_location(const char *httperr, const char *errmsg,
                              const char *location)
@@ -1108,6 +985,7 @@ static void http_head(list **head)
 } // http_head
 
 
+#if !GNOCACHE
 static int http_get(list **head)
 {
     list *headers = NULL;
@@ -1120,6 +998,132 @@ static int http_get(list **head)
         *head = headers;
     return fd;
 } // http_get
+
+
+static const char *makeNum(int64 num)
+{
+    static char buf[64];
+    snprintf(buf, sizeof (buf), "%lld", (long long) num);
+    return buf;
+} // makeNum
+
+
+static list *loadMetadata(const char *fname)
+{
+    list *retval = NULL;
+    struct stat statbuf;
+    int fd = open(fname, O_RDONLY);
+    if (fd == -1)
+        return NULL;
+
+    if (fstat(fd, &statbuf) == -1)
+    {
+        close(fd);
+        return NULL;
+    } // if
+
+    char *buf = (char *) xmalloc(statbuf.st_size + 1);
+    if (read(fd, buf, statbuf.st_size) != statbuf.st_size)
+    {
+        free(buf);
+        close(fd);
+        return NULL;
+    } // if
+
+    buf[statbuf.st_size] = '\0';
+    close(fd);
+
+    char *ptr = buf;
+    int total = 0;
+    while (1)
+    {
+        char *key = ptr;
+        ptr = strchr(ptr, '\n');
+        if (ptr == NULL)
+            break;
+        *(ptr++) = '\0';
+        char *value = ptr;
+        ptr = strchr(ptr, '\n');
+        if (ptr == NULL)
+            break;
+        *(ptr++) = '\0';
+        if (*key != '\0')
+            listSet(&retval, key, value);
+        debugEcho("Loaded metadata '%s' => '%s'", key, value);
+        total++;
+    } // while
+
+    free(buf);
+    debugEcho("Loaded %d metadata pair(s).", total);
+
+    return retval;
+} // loadMetadata
+
+
+static int cachedMetadataMostRecent(const list *metadata, const list *head)
+{
+    const char *contentlength = listFind(metadata, "Content-Length");
+    if (!contentlength)
+        return 0;
+
+    const char *etag = listFind(metadata, "ETag");
+    if (!etag)
+        return 0;
+
+    const char *lastmodified = listFind(metadata, "Last-Modified");
+    if (!lastmodified)
+        return 0;
+
+    if (strcmp(contentlength, listFind(head, "Content-Length")) != 0)
+        return 0;
+
+    if (strcmp(etag, listFind(head, "ETag")) != 0)
+        return 0;
+
+    if (strcmp(lastmodified, listFind(head, "Last-Modified")) != 0)
+    {
+        const char *isweak = listFind(metadata, "X-Offload-Is-Weak");
+        if ( (!isweak) || (strcmp(isweak, "0") != 0) )
+            return 0;
+    } // if
+
+    // See if file size != Content-Length, and if it isn't,
+    //  see if X-Offload-Caching-PID still exists. If process
+    //  is missing, assume transfer died and recache.
+    struct stat statbuf;
+    if (stat(GFilePath, &statbuf) == -1)
+        return 0;
+
+    const int64 fsize = statbuf.st_size;
+    if (fsize != atoi64(contentlength))
+    {
+        // whoa, we were supposed to cache this!
+        const char *cacher = listFind(metadata, "X-Offload-Caching-PID");
+        if (!cacher)
+            return 0;
+
+        const int cacherpid = atoi(cacher);
+        if (process_dead(cacherpid))
+        {
+            debugEcho("Caching process ID died!");
+            return 0;
+        } // if
+    } // if
+
+    return 1;
+} // cachedMetadataMostRecent
+
+
+static void nukeRequestFromCache(void)
+{
+    debugEcho("Nuking request from cache...");
+    getSemaphore();
+    if (GMetaDataPath != NULL)
+        unlink(GMetaDataPath);
+    if (GFilePath != NULL)
+        unlink(GFilePath);
+    putSemaphore();
+} // nukeRequestFromCache
 
 
 static char *etagToCacheFname(const char *etag)
@@ -1307,6 +1311,7 @@ static pid_t cacheFork(const int sock, FILE *cacheio, const int64 max)
     terminate();  // always die.
     return -1;
 } // cacheFork
+#endif  // #if !GNOCACHE
 
 
 static int serverMainline(int argc, char **argv, char **envp)
@@ -1469,6 +1474,18 @@ static int serverMainline(int argc, char **argv, char **envp)
     if (invalidContentRange(startRange, endRange, max))
         failure("400 Bad Request", "Bad content range requested.");
 
+#if GNOCACHE
+
+    GFilePath = makeStr("%s%s", GOFFLOADDIR, Guri);
+    debugEcho("file to send is %s", GFilePath);
+    list *metadata = head;
+    head = NULL;
+    io = open(GFilePath, O_RDONLY);
+    if (io == -1)
+        failure("500 Internal Server Error", "Couldn't access cached data.");
+
+#else
+
     char *etagFname = etagToCacheFname(etag);
     GFilePath = makeStr("%s/filedata-%s", GOFFLOADDIR, etagFname);
     GMetaDataPath = makeStr("%s/metadata-%s", GOFFLOADDIR, etagFname);
@@ -1547,6 +1564,8 @@ static int serverMainline(int argc, char **argv, char **envp)
         if (io == -1)
             failure("500 Internal Server Error", "Couldn't access cached data.");
     } // else
+
+#endif
 
     if (!GHttpStatus)
         GHttpStatus = atoi(responseCode);
