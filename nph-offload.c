@@ -1270,7 +1270,7 @@ static pid_t cacheFork(const int sock, FILE *cacheio, const int64 max)
     #if GSETPROCTITLE
         #ifdef __linux__
         {
-            snprintf(GArgv[0], GMaxArgvLen, "offload: CACHE %s", Guri);
+            snprintf(GArgv[0], GMaxArgvLen, "offload: %s CACHE %s", GBASESERVER, Guri);
             char *p = &GArgv[0][strlen(GArgv[0])];
             while(p < GLastArgv)
                 *(p++) = '\0';
@@ -1362,7 +1362,7 @@ static int serverMainline(int argc, char **argv, char **envp)
 
             GArgv = argv;
             GMaxArgvLen = (GLastArgv - GArgv[0]) - 2;
-            snprintf(GArgv[0], GMaxArgvLen, "offload: %s %s %s", GRemoteAddr, GReqMethod, Guri);
+            snprintf(GArgv[0], GMaxArgvLen, "offload: %s %s %s %s", GBASESERVER, GRemoteAddr, GReqMethod, Guri);
             char *p = &GArgv[0][strlen(GArgv[0])];
             while(p < GLastArgv)
                 *(p++) = '\0';
