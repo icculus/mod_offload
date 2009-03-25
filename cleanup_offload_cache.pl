@@ -53,13 +53,15 @@ sub loadMetadata {
 }
 
 sub usage {
-    die("USAGE: $0 <offloaddir> [--nukeshortfiles]\n")
+    die("USAGE: $0 <offloaddir> [--nukeshortfiles] [--youngerthan=X]\n")
 }
 
+my $youngerthan = undef;
 my $nukeshortfiles = 0;
 my $offloaddir = undef;
 foreach (@ARGV) {
     $nukeshortfiles = 1, next if ($_ eq '--nukeshortfiles');
+    $youngerthan = $1, next if (/\A--youngerthan=(\d+)\Z/);
     $offloaddir = $_, next if not defined $offloaddir;
     usage();
 }
@@ -69,12 +71,23 @@ usage() if (not defined $offloaddir);
 opendir(DIRH, $offloaddir) || die("Couldn't open directory [$offloaddir]: $!");
 
 my $diskrecovered = 0;
+my $headrequests = 0;
 my $filesseen = 0;
 my $filesdelete = 0;
 my $totalfilespace = 0;
 
+print("\n");
+print("mod_offload cleanup script starting up...\n");
+if (defined $youngerthan) {
+    print("Only checking files younger than $youngerthan days.\n");
+    $youngerthan *= 24 * 60 * 60;  # convert days to seconds.
+} else {
+    print("Checking all files.\n");
+}
+
 while (my $f = readdir(DIRH)) {
     # '7' is the file size info in stat().
+    # '9' is the mtime info in stat().
     my $filespace = 0;
 
     $filesseen++;
@@ -96,7 +109,11 @@ while (my $f = readdir(DIRH)) {
     my $filedatapath = $offloaddir . '/filedata-' . $etag;
 
     my $filecachesize = (stat($filedatapath))[7];
-    $filespace += (stat($metadatapath))[7] if (-f $metadatapath);
+
+    my @metastat = stat($metadatapath);
+    my $filecachemtime = $metastat[9];
+
+    $filespace += $metastat[7] if (-f $metadatapath);
     $filespace += $filecachesize if (-f $filedatapath);
 
     $totalfilespace += $filespace;
@@ -110,6 +127,7 @@ while (my $f = readdir(DIRH)) {
     }
 
     next if ($filetype eq 'file');
+    next if ((defined $youngerthan) && ((time()-$metastat[9]) > $youngerthan));
 
     my %metadata = loadMetadata($metadatapath);
     next if (not %metadata);
@@ -126,6 +144,7 @@ while (my $f = readdir(DIRH)) {
         next;
     }
 
+    $headrequests++;
     my $len = $metadata{'Content-Length'};
     my $hostname = $metadata{'X-Offload-Hostname'};
     my $origurl = $metadata{'X-Offload-Orig-URL'};
@@ -169,5 +188,6 @@ closedir(DIRH);
 
 print("Recovered $diskrecovered bytes of $totalfilespace.\n");
 print("$filesseen files seen, $filesdelete deleted.\n");
+print("$headrequests HTTP HEAD requests.\n");
 exit 0;
 
