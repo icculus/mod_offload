@@ -815,7 +815,7 @@ static int invalidContentRange(const int64 startRange, const int64 endRange,
 #else
 static void debugInit(int argc, char **argv, char **envp)
 {
-    #if !GDEBUGTOFILE
+    #if ((!GLISTENPORT) && (!GDEBUGTOFILE))
     write_header("HTTP/1.1 ", "200 OK");
     write_header("Status: ", "200 OK");
     write_header("Content-type: ", "text/plain; charset=utf-8");
@@ -1725,10 +1725,10 @@ static int serverMainline(int argc, char **argv, char **envp)
 
         if ((br >= startRange) && (br < endRange))
         {
-            #if ((GDEBUG) && (!GDEBUGTOFILE))
+            #if ((!GLISTENPORT) && (GDEBUG) && (!GDEBUGTOFILE))
             debugEcho("Would have written %d bytes", len);
             GBytesSent += len;
-            #elif ((!GDEBUG) || (GDEBUGTOFILE))
+            #else
             const int bw = (int) write(GSocket, data, len);
             debugEcho("Wrote %d bytes", bw);
             GBytesSent += (int64) bw;
