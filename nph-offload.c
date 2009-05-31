@@ -184,6 +184,7 @@ static char *GFilePath = NULL;
 static void *GSemaphore = NULL;
 static int GSemaphoreOwned = 0;
 static FILE *GDebugFilePointer = NULL;
+static int GSocket = -1;
 
 #if !GNOCACHE
 static char *GMetaDataPath = NULL;
@@ -460,17 +461,62 @@ static const char *GMonth[] = {
     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 };
 
-static void printf_date_header(FILE *out)
+static void make_date_header(char *buf, const size_t buflen)
 {
-    if (out == NULL)
-        return;
-
     time_t now = time(NULL);
     const struct tm *tm = gmtime(&now);
-    fprintf(out, "Date: %s, %02d %s %d %02d:%02d:%02d GMT\r\n",
+    snprintf(buf, buflen, "Date: %s, %02d %s %d %02d:%02d:%02d GMT\r\n",
              GWeekday[tm->tm_wday], tm->tm_mday, GMonth[tm->tm_mon],
              tm->tm_year+1900, tm->tm_hour, tm->tm_min, tm->tm_sec);
+} // make_date_header
+
+static void printf_date_header(FILE *out)
+{
+    char buf[128];
+    if (out == NULL)
+        return;
+    make_date_header(buf, sizeof (buf));
+    fprintf(out, "%s", buf);
 } // printf_date_header
+
+
+static void terminate(void);
+
+static void write_string(const int fd, const char *str)
+{
+    size_t avail = strlen(str);
+    while (avail > 0)
+    {
+        ssize_t rc = write(fd, str, avail);
+        if ((rc == -1) && (errno == EINTR))
+            continue;
+
+        if (rc <= 0)
+        {
+            debugEcho("write_string(): write() failed! (%s)\n", strerror(errno));
+            terminate();
+        } // if
+
+        avail -= rc;
+        str += rc;
+    } // while
+} // write_string
+
+
+static void write_header(const char *key, const char *val)
+{
+    write_string(GSocket, key);
+    write_string(GSocket, val);
+    write_string(GSocket, "\r\n");
+} // write_header
+
+
+static void write_date_header(void)
+{
+    char buf[128];
+    make_date_header(buf, sizeof (buf));
+    write_string(GSocket, buf);
+} // write_date_header
 
 
 static int64 atoi64(const char *str)
@@ -699,10 +745,9 @@ static void terminate(void)
 
     #if GLISTENPORT
     char ch = 0;
-    shutdown(0, SHUT_RDWR);
-    shutdown(1, SHUT_RDWR);
-    while (recv(0, &ch, sizeof (ch), 0) > 0) {}
-    while (recv(1, &ch, sizeof (ch), 0) > 0) {}
+    shutdown(GSocket, SHUT_RDWR);
+    while (recv(GSocket, &ch, sizeof (ch), 0) > 0) {}
+    close(GSocket);
     #endif
 
     if (stdin) fclose(stdin);
@@ -714,6 +759,7 @@ static void terminate(void)
 
     exit(0);
 } // terminate
+
 
 static void failure_location(const char *httperr, const char *errmsg,
                              const char *location)
@@ -732,18 +778,18 @@ static void failure_location(const char *httperr, const char *errmsg,
     debugEcho("  %s", httperr);
     debugEcho("  %s", errmsg);
 
-    if (stdout != NULL)
+    if (GSocket != -1)
     {
-        printf("HTTP/1.1 %s\r\n", httperr);
-        printf("Status: %s\r\n", httperr);
-        printf("Server: %s\r\n", GSERVERSTRING);
-        printf_date_header(stdout);
+        write_header("HTTP/1.1 ", httperr);
+        write_header("Status: ", httperr);
+        write_header("Server: ", httperr);
+        write_date_header();
         if (location != NULL)
-            printf("Location: %s\r\n", location);
-        printf("Connection: close\r\n");
-        printf("Content-type: text/plain; charset=utf-8\r\n");
-        printf("\r\n");
-        printf("%s\n\n", errmsg);
+            write_header("Location: ", location);
+        write_header("Connection: ", "close");
+        write_header("Content-type: ", "text/plain; charset=utf-8");
+        write_header("", "");
+        write_header("", errmsg);
         GBytesSent += strlen(errmsg) + 2;
     } // if
 
@@ -770,13 +816,13 @@ static int invalidContentRange(const int64 startRange, const int64 endRange,
 static void debugInit(int argc, char **argv, char **envp)
 {
     #if !GDEBUGTOFILE
-    printf("HTTP/1.1 200 OK\r\n");
-    printf("Status: 200 OK\r\n");
-    printf("Content-type: text/plain; charset=utf-8\r\n");
-    printf_date_header(stdout);
-    printf("Server: " GSERVERSTRING "\r\n");
-    printf("Connection: close\r\n");
-    printf("\r\n");
+    write_header("HTTP/1.1 ", "200 OK");
+    write_header("Status: ", "200 OK");
+    write_header("Content-type: ", "text/plain; charset=utf-8");
+    write_date_header();
+    write_header("Server: ", GSERVERSTRING);
+    write_header("Connection: ", "close");
+    write_header("", "");
     GHttpStatus = 200;
     #endif
 
@@ -1253,6 +1299,11 @@ static pid_t cacheFork(const int sock, FILE *cacheio, const int64 max)
     GAllDownloads = GMyDownload = NULL;
     #endif
 
+    #if GLISTENPORT
+    if (GSocket != -1)
+        close(GSocket);
+    #endif
+
     fclose(stdin);
     fclose(stdout);
     fclose(stderr);
@@ -1570,22 +1621,24 @@ static int serverMainline(int argc, char **argv, char **envp)
     if (!GHttpStatus)
         GHttpStatus = atoi(responseCode);
 
-    printf("HTTP/1.1 %s\r\n", responseCode);
-    printf("Status: %s\r\n", responseCode);
-    printf_date_header(stdout);
-    printf("Server: %s\r\n", GSERVERSTRING);
-    printf("Connection: close\r\n");
-    printf("ETag: %s\r\n", listFind(metadata, "ETag"));
-    printf("Last-Modified: %s\r\n", listFind(metadata, "Last-Modified"));
-    printf("Content-Length: %lld\r\n", (long long) ((endRange - startRange) + 1));
-    printf("Accept-Ranges: bytes\r\n");
-    printf("Content-Type: %s\r\n", listFind(metadata, "Content-Type"));
+    write_header("HTTP/1.1 ", responseCode);
+    write_header("Status: ", responseCode);
+    write_date_header();
+    write_header("Server: ", GSERVERSTRING);
+    write_header("Connection: ", "close");
+    write_header("ETag: ", listFind(metadata, "ETag"));
+    write_header("Last-Modified: ", listFind(metadata, "Last-Modified"));
+    write_header("Content-Length: ", makeNum((endRange - startRange) + 1));
+    write_header("Accept-Ranges: ", "bytes");
+    write_header("Content-Type: ", listFind(metadata, "Content-Type"));
     if (reportRange)
     {
-        printf("Content-Range: bytes %lld-%lld/%lld\r\n",
+        char rangestr[128];
+        snprintf(rangestr, sizeof (rangestr), "bytes %lld-%lld/%lld",
                (long long) startRange, (long long) endRange, (long long) max);
+        write_header("Content-Range: ", rangestr);
     } // if
-    printf("\r\n");
+    write_header("", "");
 
     listFree(&metadata);
 
@@ -1657,7 +1710,7 @@ static int serverMainline(int argc, char **argv, char **envp)
         while (1)
         {
             char onebyte = 0;
-            const ssize_t recvval = recv(1, &onebyte, sizeof (onebyte), MSG_DONTWAIT);
+            const ssize_t recvval = recv(GSocket, &onebyte, sizeof (onebyte), MSG_DONTWAIT);
             deadsocket = (recvval == 0);
             if ( ((recvval < 0) && (errno == EAGAIN)) || (deadsocket) )
                 break;
@@ -1676,7 +1729,7 @@ static int serverMainline(int argc, char **argv, char **envp)
             debugEcho("Would have written %d bytes", len);
             GBytesSent += len;
             #elif ((!GDEBUG) || (GDEBUGTOFILE))
-            const int bw = (int) fwrite(data, 1, len, stdout);
+            const int bw = (int) write(GSocket, data, len);
             debugEcho("Wrote %d bytes", bw);
             GBytesSent += (int64) bw;
             if (bw != len)
@@ -1877,29 +1930,12 @@ static inline void daemonChild(const int fd, const struct sockaddr *addr,
     signal(SIGBUS, daemonChildSig);
     signal(SIGSEGV, daemonChildSig);
 
-    if (fd == 0)
-        dup2(fd, 1);
-    else if (fd == 1)
-        dup2(fd, 0);
-    else
-    {
-        dup2(fd, 0);
-        dup2(fd, 1);
-        close(fd);
-    } // else
-
-    stdin = fdopen(0, "rb");
-    stdout = fdopen(1, "wb");
-    stderr = fopen("/dev/null", "wb");
+    GSocket = fd;
 
     debugEcho("New child running to handle incoming request.");
 
-    if ((stdin) && (stdout) && (stderr))
-    {
-        setbuf(stdout, NULL);
-        if (readClientHeaders(0, addr) == NULL)  // NULL == no error.
-            serverMainline(argc, argv, environ);
-    } // if
+    if (readClientHeaders(GSocket, addr) == NULL)  // NULL == no error.
+        serverMainline(argc, argv, environ);
 
     terminate();
 } // daemonChild
@@ -2015,6 +2051,7 @@ static inline int daemonMainline(int argc, char **argv, char **envp)
 int main(int argc, char **argv, char **envp)
 {
     #if !GLISTENPORT
+    GSocket = fileno(stdout);
     return serverMainline(argc, argv, envp);
     #else
     return daemonMainline(argc, argv, envp);
