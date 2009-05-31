@@ -1301,13 +1301,17 @@ static pid_t cacheFork(const int sock, FILE *cacheio, const int64 max)
 
     #if GLISTENPORT
     if (GSocket != -1)
+    {
         close(GSocket);
+        GSocket = -1;
+    } // if
     #endif
 
-    fclose(stdin);
-    fclose(stdout);
-    fclose(stderr);
-    stdin = stderr = stdout = NULL;
+    if (stdin) fclose(stdin);
+    if (stdout) fclose(stdout);
+    if (stderr) fclose(stderr);
+    stdin = stdout = stderr = NULL;
+
     chdir("/");
     setsid();
 
