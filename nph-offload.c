@@ -1716,16 +1716,21 @@ static int serverMainline(int argc, char **argv, char **envp)
             char onebyte = 0;
             const ssize_t recvval = recv(GSocket, &onebyte, sizeof (onebyte), MSG_DONTWAIT);
             deadsocket = (recvval == 0);
+            if (deadsocket)
+                debugEcho("EOF on socket!");
             if ( ((recvval < 0) && (errno == EAGAIN)) || (deadsocket) )
                 break;
         } // while
+        #else
+        if ( (feof(stdout)) || (ferror(stdout)) )
+        {
+            debugEcho("EOF or error on stdout!");
+            deadsocket = 1;
+        } // if
         #endif
 
-        if (deadsocket || feof(stdout) || ferror(stdout))
-        {
-            debugEcho("EOF on stdout!");
+        if (deadsocket)
             break;
-        } // if
 
         if ((br >= startRange) && (br < endRange))
         {
