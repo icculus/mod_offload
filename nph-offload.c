@@ -470,6 +470,8 @@ static void make_date_header(char *buf, const size_t buflen)
              tm->tm_year+1900, tm->tm_hour, tm->tm_min, tm->tm_sec);
 } // make_date_header
 
+
+#if GDEBUG
 static void printf_date_header(FILE *out)
 {
     char buf[128];
@@ -478,6 +480,7 @@ static void printf_date_header(FILE *out)
     make_date_header(buf, sizeof (buf));
     fprintf(out, "%s", buf);
 } // printf_date_header
+#endif
 
 
 static void terminate(void);
@@ -1030,6 +1033,14 @@ static void http_head(list **head)
         close(fd);
 } // http_head
 
+static const char *makeNum(int64 num)
+{
+    static char buf[64];
+    snprintf(buf, sizeof (buf), "%lld", (long long) num);
+    return buf;
+} // makeNum
+
+
 
 #if !GNOCACHE
 static int http_get(list **head)
@@ -1044,14 +1055,6 @@ static int http_get(list **head)
         *head = headers;
     return fd;
 } // http_get
-
-
-static const char *makeNum(int64 num)
-{
-    static char buf[64];
-    snprintf(buf, sizeof (buf), "%lld", (long long) num);
-    return buf;
-} // makeNum
 
 
 static list *loadMetadata(const char *fname)
