@@ -1985,7 +1985,7 @@ static int daemonListenSocket(void)
     memset(&hints, '\0', sizeof (hints));
     hints.ai_family = GLISTENFAMILY;
     hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = AI_NUMERICSERV | AI_V4MAPPED | AI_ALL | AI_ADDRCONFIG;
+    hints.ai_flags = AI_NUMERICSERV | AI_V4MAPPED | AI_ALL | AI_ADDRCONFIG | AI_PASSIVE;
 
     int rc = -1;
     struct addrinfo *dns = NULL;
