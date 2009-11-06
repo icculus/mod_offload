@@ -53,14 +53,16 @@ sub loadMetadata {
 }
 
 sub usage {
-    die("USAGE: $0 <offloaddir> [--nukeshortfiles] [--youngerthan=X]\n")
+    die("USAGE: $0 <offloaddir> [--outputurls] [--nukeshortfiles] [--youngerthan=X]\n")
 }
 
 my $youngerthan = undef;
 my $nukeshortfiles = 0;
+my $outputurls = 0;
 my $offloaddir = undef;
 foreach (@ARGV) {
     $nukeshortfiles = 1, next if ($_ eq '--nukeshortfiles');
+    $outputurls = 1, next if ($_ eq '--outputurls');
     $youngerthan = $1, next if (/\A--youngerthan=(\d+)\Z/);
     $offloaddir = $_, next if not defined $offloaddir;
     usage();
@@ -144,11 +146,17 @@ while (my $f = readdir(DIRH)) {
         next;
     }
 
-    $headrequests++;
     my $len = $metadata{'Content-Length'};
     my $hostname = $metadata{'X-Offload-Hostname'};
     my $origurl = $metadata{'X-Offload-Orig-URL'};
     my $url = 'http://' . $hostname . $origurl;
+
+    if ($outputurls) {
+        print "$url\n";
+        next;
+    }
+
+    $headrequests++;
     my $request = HTTP::Request->new(HEAD => $url);
     my $response = $ua->request($request);
 
@@ -186,8 +194,11 @@ while (my $f = readdir(DIRH)) {
 
 closedir(DIRH);
 
-print("Recovered $diskrecovered bytes of $totalfilespace.\n");
-print("$filesseen files seen, $filesdelete deleted.\n");
-print("$headrequests HTTP HEAD requests.\n");
+if (not $outputurls) {
+    print("Recovered $diskrecovered bytes of $totalfilespace.\n");
+    print("$filesseen files seen, $filesdelete deleted.\n");
+    print("$headrequests HTTP HEAD requests.\n");
+}
+
 exit 0;
 
