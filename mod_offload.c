@@ -64,6 +64,10 @@
  *    ...clients with User-Agent fields matching <pattern> are never offloaded.
  *    This can be a wildcard pattern.
  *
+ *  OffloadExcludeAddress <pattern>
+ *    ...clients from an IP address matching <pattern> are never 
+ *    offloaded. This can be a wildcard pattern.
+ *
  * For URLs where mod_offload is in effect, it'll go through a checklist.
  *  Anything in the checklist that fails means that offloading shouldn't
  *  occur and Apache should handle this request as it would without
@@ -80,6 +84,7 @@
  *  - Is the request not explicitly trying to bypass offloading?
  *  - Is the desired file's mimetype not listed in OffloadExcludeMimeType?
  *  - Is the client's User-Agent not listed in OffloadExcludeUserAgent?
+ *  - Is the client's IP address not listed in OffloadExcludeAddress?
  *
  * If the module makes it all the way through the checklist, it picks a
  *  random offload server (the server is chosen by the current
@@ -100,7 +105,7 @@
 #include "http_main.h"
 #include "http_protocol.h"
 
-#define MOD_OFFLOAD_VER "1.0.2"
+#define MOD_OFFLOAD_VER "1.0.3"
 #define DEFAULT_MIN_OFFLOAD_SIZE (5 * 1024)
 #define VERSION_COMPONENT "mod_offload/"MOD_OFFLOAD_VER
 
@@ -148,6 +153,7 @@ typedef struct
     apr_array_header_t *offload_ips;
     apr_array_header_t *offload_exclude_mime;
     apr_array_header_t *offload_exclude_agents;
+    apr_array_header_t *offload_exclude_addr;
 } offload_dir_config;
 
 
@@ -252,6 +258,31 @@ static int offload_handler(request_rec *r)
         return DECLINED;
     } /* if */
 
+    /* is this client's IP excluded from offloading? DECLINED */
+    if (cfg->offload_exclude_addr->nelts)
+    {
+        char ipstr[256];
+        #if TARGET_APACHE_1_3
+        unsigned int x = (unsigned int) r->connection->remote_addr.sin_addr.s_addr;
+        snprintf(ipstr, sizeof (ipstr), "%u.%u.%u.%u",
+                 x & 0xFF, (x >> 8) & 0xFF, (x >> 16) & 0xFF, (x >> 24) & 0xFF);
+        #else
+        apr_sockaddr_ip_getbuf(ipstr, sizeof (ipstr), &r->connection->remote_addr);
+        #endif
+        for (i = 0; i < cfg->offload_exclude_addr->nelts; i++)
+        {
+            char *ip = ((char **) cfg->offload_exclude_addr->elts)[i];
+            if (wild_match(ip, ipstr))
+            {
+                debugLog(r, cfg,
+                    "URI request '%s' from address '%s' is excluded from"
+                    " offloading by address pattern '%s'",
+                    r->unparsed_uri, ipstr, ip);
+                return DECLINED;
+            } /* if */
+        } /* for */
+    } /* if */
+
     /* is this request from one of the listed offload servers? DECLINED */
     list = (apr_sockaddr_t *) cfg->offload_ips->elts;
     for (i = 0; i < cfg->offload_ips->nelts; i++) {
@@ -337,6 +368,7 @@ static void *create_offload_dir_config(apr_pool_t *p, char *dummy)
     retval->offload_hosts = apr_array_make(p, 0, sizeof (char *));
     retval->offload_exclude_mime = apr_array_make(p, 0, sizeof (char *));
     retval->offload_exclude_agents = apr_array_make(p, 0, sizeof (char *));
+    retval->offload_exclude_addr = apr_array_make(p, 0, sizeof (char *));
     retval->offload_ips = apr_array_make(p, 0, sizeof (apr_sockaddr_t));
     retval->offload_min_size = DEFAULT_MIN_OFFLOAD_SIZE;
     
@@ -422,6 +454,16 @@ static const char *offload_excludeagent(cmd_parms *parms, void *mconfig,
 } /* offload_excludeagent */
 
 
+static const char *offload_excludeaddr(cmd_parms *parms, void *mconfig,
+                                       const char *arg)
+{
+    offload_dir_config *cfg = (offload_dir_config *) mconfig;
+    char **addrpattern = (char **) apr_array_push(cfg->offload_exclude_addr);
+    *addrpattern = apr_pstrdup(parms->pool, arg);
+    return NULL;  /* no error. */
+} /* offload_excludeaddr */
+
+
 static const command_rec offload_cmds[] =
 {
     AP_INIT_FLAG("OffloadEngine", offload_engine, NULL, OR_OPTIONS,
@@ -436,6 +478,8 @@ static const command_rec offload_cmds[] =
       "Mimetype to always exclude from offloading (wildcards allowed)"),
     AP_INIT_TAKE1("OffloadExcludeUserAgent",offload_excludeagent,0,OR_OPTIONS,
       "User-Agent to always exclude from offloading (wildcards allowed)"),
+    AP_INIT_TAKE1("OffloadExcludeAddress",offload_excludeaddr,0,OR_OPTIONS,
+      "IP address to always exclude from offloading (wildcards allowed)"),
     { NULL }
 };
 
