@@ -267,7 +267,7 @@ static int offload_handler(request_rec *r)
         snprintf(ipstr, sizeof (ipstr), "%u.%u.%u.%u",
                  x & 0xFF, (x >> 8) & 0xFF, (x >> 16) & 0xFF, (x >> 24) & 0xFF);
         #else
-        apr_sockaddr_ip_getbuf(ipstr, sizeof (ipstr), &r->connection->remote_addr);
+        apr_sockaddr_ip_getbuf(ipstr, sizeof (ipstr), r->connection->remote_addr);
         #endif
         for (i = 0; i < cfg->offload_exclude_addr->nelts; i++)
         {
