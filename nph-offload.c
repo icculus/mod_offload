@@ -125,6 +125,7 @@
 #include <netdb.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <utime.h>
 
 #define GVERSION "1.1.6"
 #define GSERVERSTRING "nph-offload.c/" GVERSION
@@ -1568,8 +1569,8 @@ static int serverMainline(int argc, char **argv, char **envp)
         {
             listFree(&head);
             debugEcho("File is cached.");
-            utimes(GFileDataPath, NULL);  // update to latest time so we know what's being requested most.
-            utimes(GMetaDataPath, NULL);  // update to latest time so we know what's being requested most.
+            utime(GFilePath, NULL);  // update to latest time so we know what's being requested most.
+            utime(GMetaDataPath, NULL);  // update to latest time so we know what's being requested most.
         } // if
 
         else
