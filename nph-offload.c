@@ -248,12 +248,10 @@ static void *createSemaphore(const int initialVal)
 {
     void *retval = NULL;
     const int value = initialVal ? 0 : 1;
-    int created = 1;
 
     retval = sem_open("SEM-" SHM_NAME, O_CREAT | O_EXCL, 0600, value);
     if ((retval == (void *) SEM_FAILED) && (errno == EEXIST))
     {
-        created = 0;
         debugEcho("(semaphore already exists, just opening existing one.)");
         retval = sem_open("SEM-" SHM_NAME, 0);
     } // if
