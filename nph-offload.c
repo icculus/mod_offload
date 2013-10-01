@@ -1568,6 +1568,8 @@ static int serverMainline(int argc, char **argv, char **envp)
         {
             listFree(&head);
             debugEcho("File is cached.");
+            utimes(GFileDataPath, NULL);  // update to latest time so we know what's being requested most.
+            utimes(GMetaDataPath, NULL);  // update to latest time so we know what's being requested most.
         } // if
 
         else
